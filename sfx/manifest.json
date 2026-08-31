@@ -1,0 +1,104 @@
+[
+  {
+    "name": "pencil-line",
+    "seconds": 1,
+    "prompt": "A single pencil stroke drawing a straight line across rough graph paper, short graphite scratch with a soft paper texture.",
+    "event": "draw"
+  },
+  {
+    "name": "pencil-press",
+    "seconds": 1,
+    "prompt": "A pencil pressing down hard and scratching a tense line on paper, gritty graphite scrape ending with a faint creak.",
+    "event": "danger"
+  },
+  {
+    "name": "box-fold",
+    "seconds": 1,
+    "prompt": "A small paper box being folded shut, crisp paper crease followed by a soft satisfying tuck.",
+    "event": "box"
+  },
+  {
+    "name": "rival-box",
+    "seconds": 1,
+    "prompt": "A paper box closing with a dull muted thud on a wooden desk, slightly heavy and disappointing.",
+    "event": "box-rival"
+  },
+  {
+    "name": "extra-turn",
+    "seconds": 1,
+    "prompt": "Two quick cheerful pencil taps on a wooden desk, light and encouraging.",
+    "event": "extra"
+  },
+  {
+    "name": "eraser-thump",
+    "seconds": 1,
+    "prompt": "A rubber pencil eraser thumped firmly on a wooden desk twice, blunt and refusing.",
+    "event": "invalid"
+  },
+  {
+    "name": "erase-line",
+    "seconds": 1,
+    "prompt": "A rubber eraser rubbing out a pencil line on paper, two soft swishing strokes with crumbs falling.",
+    "event": "undo"
+  },
+  {
+    "name": "hint-tap",
+    "seconds": 1,
+    "prompt": "A fingernail tapping twice on a sheet of paper next to a diagram, light inquisitive taps.",
+    "event": "hint"
+  },
+  {
+    "name": "ui-tap",
+    "seconds": 1,
+    "prompt": "A single soft fingertip tap on a wooden desk, short warm knock.",
+    "event": "ui"
+  },
+  {
+    "name": "pencil-hover",
+    "seconds": 1,
+    "prompt": "A very faint pencil tip tick touching paper, extremely short and quiet graphite contact.",
+    "event": "hover"
+  },
+  {
+    "name": "menu-select",
+    "seconds": 1,
+    "prompt": "A gentle paper page turn with a soft finger press, confirming rustle of a single sheet.",
+    "event": "select"
+  },
+  {
+    "name": "turn-tap",
+    "seconds": 1,
+    "prompt": "One quiet pencil tick on paper marking a turn, dry and subtle.",
+    "event": "turn"
+  },
+  {
+    "name": "star-chime",
+    "seconds": 2,
+    "prompt": "A small brass desk bell struck once, bright clear ding ringing out gently.",
+    "event": "star"
+  },
+  {
+    "name": "clock-tick",
+    "seconds": 1,
+    "prompt": "A single mechanical clock tick, precise wooden click of an old desk clock.",
+    "event": "tick"
+  },
+  {
+    "name": "win-slap",
+    "seconds": 3,
+    "prompt": "A celebratory palm slap on a wooden desk followed by papers fluttering and a happy pencil drumroll.",
+    "event": "win"
+  },
+  {
+    "name": "page-drop",
+    "seconds": 2,
+    "prompt": "A sheet of paper sliding off a desk and settling softly onto the floor, deflated and quiet.",
+    "event": "lose"
+  },
+  {
+    "name": "tie-tap",
+    "seconds": 2,
+    "prompt": "Two pencils tapping against each other once in a friendly draw salute, hollow wooden clack.",
+    "event": "drawn-game"
+  }
+]

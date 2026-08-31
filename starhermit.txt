@@ -1,0 +1,3 @@
+name=Boxes & Lines
+launch=index.html
+server=server.js
