@@ -1,0 +1,17 @@
+{
+  "name": "boxes-and-lines",
+  "version": "1.0.0",
+  "description": "Boxes & Lines — a turn-based territory strategy game on a dimensional graph-paper desk.",
+  "scripts": {
+    "test": "node tests/run.js && node tests/server.test.mjs",
+    "test:unit": "node tests/run.js",
+    "test:server": "node tests/server.test.mjs",
+    "test:e2e": "node tests/e2e.mjs",
+    "serve": "node server.js"
+  },
+  "license": "SEE LICENSE IN LICENSE.md",
+  "private": true,
+  "devDependencies": {
+    "playwright-core": "^1.62.1"
+  }
+}

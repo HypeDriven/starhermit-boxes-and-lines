@@ -277,11 +277,23 @@ function handleSubmitScore(body) {
   if (cfg.version !== Content.CONTENT_VERSION) return { code: 422, error: 'stale-version' };
 
   // Authoritative replay: re-run the game from cfg; client claims are ignored.
+  // Commands logged for AI players are re-derived from the seeded rules stream
+  // and must match, so a forged log cannot make the rival play to lose.
   let state;
   try {
     state = Rules.createGame(cfg);
     for (let i = 0; i < commands.length; i++) {
-      const res = Rules.applyCommand(state, commands[i]);
+      const cmd = commands[i];
+      if (cmd && cmd.type === 'draw' && !state.over) {
+        const actor = state.players[state.current];
+        if (actor && actor.type === 'ai') {
+          const edge = Rules.aiMove(state, actor.ai);
+          if (!edge || edge.dir !== cmd.dir || edge.r !== cmd.r || edge.c !== cmd.c) {
+            return { code: 422, error: 'impossible-score' };
+          }
+        }
+      }
+      const res = Rules.applyCommand(state, cmd);
       if (!res.ok) return { code: 422, error: 'impossible-score' };
     }
   } catch (e) {

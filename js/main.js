@@ -245,6 +245,9 @@ import { createRenderer, webglAvailable } from './render.js';
 
   function gameRunning() { return sess && appState === 'active' && !paused && !document.hidden; }
 
+  // A sheet the player can still return to (results/progression do not count).
+  function inPlay() { return !!sess && (appState === 'active' || appState === 'paused'); }
+
   // ---------------------------------------------------------------- screens
 
   var SCREEN_TITLES = {
@@ -279,17 +282,38 @@ import { createRenderer, webglAvailable } from './render.js';
       lastFocus = document.activeElement;
       ov.hidden = false;
     }
-    $('screen-back').hidden = (name === 'title' && !sess);
+    $('screen-back').hidden = (name === 'title' && !inPlay());
     $('screen-panel').setAttribute('tabindex', '-1');
     $('screen-panel').focus();
+    syncInert();
   }
 
   function closeScreen() {
     $('screen-overlay').hidden = true;
     currentScreen = null;
     if (paused) $('pause-overlay').hidden = false;
+    syncInert();
     if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) {} }
     lastFocus = null;
+  }
+
+  // While a modal dialog is up the shell behind it must not be reachable by
+  // tab, pointer, or the HUD buttons (Hint/Undo used to fire while paused).
+  function syncInert() {
+    var shell = $('app-shell');
+    if (!shell) return;
+    var modal = !$('screen-overlay').hidden || !$('pause-overlay').hidden;
+    if ('inert' in HTMLElement.prototype) shell.inert = modal;
+    else if (modal) shell.setAttribute('aria-hidden', 'true');
+    else shell.removeAttribute('aria-hidden');
+  }
+
+  // The "← Back" affordance, shared by the button and the Escape key.
+  function screenBack() {
+    if (paused) { closeScreen(); return; } // closeScreen re-shows pause overlay
+    if (currentScreen === 'title') { if (inPlay()) closeScreen(); return; }
+    if (!inPlay()) teardownGame(); // leaving a finished sheet for good
+    showScreen('title');
   }
 
   function tagDailySub(body) {
@@ -405,6 +429,7 @@ import { createRenderer, webglAvailable } from './render.js';
 
     $('pause-overlay').hidden = true;
     appState = 'active';
+    syncInert();
     updateHUD();
     announce(curCfg.name + '. ' + objectiveText());
     if (curCfg.intro) showToast(curCfg.intro);
@@ -420,6 +445,7 @@ import { createRenderer, webglAvailable } from './render.js';
     paused = false;
     armedEdge = null; focusEdge = null;
     $('pause-overlay').hidden = true;
+    syncInert();
     rCall('setPreview', null, -1, -1, null);
     rCall('setFocusEdge', null);
     $('objective-text').textContent = '';
@@ -595,6 +621,18 @@ import { createRenderer, webglAvailable } from './render.js';
       Audio.play('invalid');
       return;
     }
+    // Reject up front so "confirm moves" never asks the player to confirm a
+    // line that cannot be drawn (3D hit targets stay live on drawn edges).
+    var bad = Rules.checkDraw(sess.state, dir, r, c);
+    if (bad) {
+      armedEdge = null;
+      rCall('setPreview', null, -1, -1, null);
+      Audio.play('invalid');
+      var badMsg = invalidText(bad);
+      showToast(badMsg);
+      announce(badMsg);
+      return;
+    }
     if (doc.settings.confirmMoves) {
       if (armedEdge && armedEdge.dir === dir && armedEdge.r === r && armedEdge.c === c) {
         commitDraw(dir, r, c);
@@ -633,7 +671,7 @@ import { createRenderer, webglAvailable } from './render.js';
     if (!sess || appState !== 'active' || paused || !Session.isHumanTurn(sess)) return;
     if (dir === null || r < 0) {
       rCall('setPreview', null, -1, -1, null);
-      if (!curLesson) $('objective-sub').textContent = 'Your turn — pick an edge';
+      updateHUD(); // restores the turn prompt, or lesson progress during Learn
       return;
     }
     if (Rules.checkDraw(sess.state, dir, r, c)) return;
@@ -657,19 +695,15 @@ import { createRenderer, webglAvailable } from './render.js';
     });
     $('btn-pause').addEventListener('click', function () { if (sess && appState === 'active') pauseGame(); });
     $('btn-resume').addEventListener('click', resumeGame);
-    $('btn-pause-settings').addEventListener('click', function () { $('pause-overlay').hidden = true; showScreen('settings'); });
-    $('btn-pause-help').addEventListener('click', function () { $('pause-overlay').hidden = true; showScreen('help'); });
+    $('btn-pause-settings').addEventListener('click', function () { $('pause-overlay').hidden = true; syncInert(); showScreen('settings'); });
+    $('btn-pause-help').addEventListener('click', function () { $('pause-overlay').hidden = true; syncInert(); showScreen('help'); });
     $('btn-leave').addEventListener('click', function () {
       if (hosted) hostedResign(true);
       closeScreen();
       teardownGame();
       goTitle();
     });
-    $('screen-back').addEventListener('click', function () {
-      if (paused) { closeScreen(); return; } // closeScreen re-shows pause overlay
-      if (currentScreen === 'title') { closeScreen(); return; }
-      showScreen('title');
-    });
+    $('screen-back').addEventListener('click', screenBack);
   }
 
   function doUndo() {
@@ -706,6 +740,7 @@ import { createRenderer, webglAvailable } from './render.js';
     cancelAi();
     stopTick();
     $('pause-overlay').hidden = false;
+    syncInert();
     syncResignButton();
     $('btn-resume').focus();
     announce('Paused');
@@ -716,6 +751,7 @@ import { createRenderer, webglAvailable } from './render.js';
     paused = false;
     appState = 'active';
     $('pause-overlay').hidden = true;
+    syncInert();
     startTick();
     scheduleAiIfNeeded();
     announce('Resumed. ' + (Session.isHumanTurn(sess) ? 'Your turn.' : ''));
@@ -781,7 +817,16 @@ import { createRenderer, webglAvailable } from './render.js';
     if (legal.length) setFocus(last ? legal[legal.length - 1] : legal[0]);
   }
 
+  // Escape dismisses the screen dialog wherever a back action exists.
   document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !overlayOpen()) return;
+    if ($('screen-back').hidden) return;
+    e.preventDefault();
+    screenBack();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented) return; // a dialog already consumed this key
     if (!sess || appState !== 'active' && appState !== 'paused') return;
     if (overlayOpen()) return;
     var t = e.target;
