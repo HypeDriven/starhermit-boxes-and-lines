@@ -265,7 +265,7 @@ import { createRenderer, webglAvailable } from './render.js';
     $('screen-title').textContent = SCREEN_TITLES[name] || name;
     dailySubEl = null;
     switch (name) {
-      case 'title': UI.buildTitle(body, ctx); appendHostedCard(body); tagDailySub(body); break;
+      case 'title': UI.buildTitle(body, ctx); appendHostedCard(body); tagDailySub(body); prependArt(body, 'title'); break;
       case 'practice': UI.buildPractice(body, ctx); break;
       case 'journey': UI.buildJourney(body, ctx); break;
       case 'challenge': UI.buildChallenges(body, ctx); break;
@@ -274,7 +274,7 @@ import { createRenderer, webglAvailable } from './render.js';
       case 'help': UI.buildHelp(body, ctx); break;
       case 'profile': UI.buildProfile(body, ctx); break;
       case 'scores': UI.buildLeaderboard(body, ctx, { Global: Store.loadBoards().entries }, scoresTab); break;
-      case 'results': UI.buildResults(body, ctx, data); break;
+      case 'results': UI.buildResults(body, ctx, data); if (data && data.won) prependArt(body, 'results'); break;
       case 'hosted': buildHostedForm(body); break;
     }
     var ov = $('screen-overlay');
@@ -282,6 +282,7 @@ import { createRenderer, webglAvailable } from './render.js';
       lastFocus = document.activeElement;
       ov.hidden = false;
     }
+    Audio.play('page');
     $('screen-back').hidden = (name === 'title' && !inPlay());
     $('screen-panel').setAttribute('tabindex', '-1');
     $('screen-panel').focus();
@@ -314,6 +315,15 @@ import { createRenderer, webglAvailable } from './render.js';
     if (currentScreen === 'title') { if (inPlay()) closeScreen(); return; }
     if (!inPlay()) teardownGame(); // leaving a finished sheet for good
     showScreen('title');
+  }
+
+  // Decorative key art (assets/*.webp); purely cosmetic, alt="" so it is
+  // skipped by screen readers and harmless if the file fails to load.
+  var ART = { title: 'assets/title-art.webp', results: 'assets/results-art.webp' };
+  function prependArt(body, which) {
+    var img = el('img', { class: 'key-art key-art-' + which, src: ART[which], alt: '', 'aria-hidden': 'true', decoding: 'async' });
+    img.addEventListener('error', function () { img.remove(); });
+    body.insertBefore(img, body.firstChild);
   }
 
   function tagDailySub(body) {
@@ -532,6 +542,7 @@ import { createRenderer, webglAvailable } from './render.js';
           Audio.play(ev.player === 0 ? 'box' : 'box-rival');
           if (ev.player === 0) {
             chainNow++;
+            if (chainNow === 3) Audio.play('chain');
             if (chainNow > bestChainGame) bestChainGame = chainNow;
             if (doc.settings.haptics && navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
           }
@@ -743,6 +754,7 @@ import { createRenderer, webglAvailable } from './render.js';
     syncInert();
     syncResignButton();
     $('btn-resume').focus();
+    Audio.play('pause');
     announce('Paused');
   }
 

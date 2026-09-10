@@ -122,7 +122,14 @@
     'hint':      function () { blip(990, 0.12, 'sine', 0.09); blip(1320, 0.14, 'sine', 0.06, 'effects', ctx.currentTime + 0.07); caption('hint'); },
     'turn':      function () { blip(variant(700), 0.05, 'sine', 0.05); },
     'star':      function () { blip(1568, 0.18, 'sine', 0.1); },
-    'tick':      function () { blip(1050, 0.04, 'sine', 0.05); caption('clock low'); }
+    'tick':      function () { blip(1050, 0.04, 'sine', 0.05); caption('clock low'); },
+    'page':      function () { noiseBurst(0.12, 0.22, 1400, 'effects', ctx.currentTime, 0.5); blip(variant(900), 0.05, 'sine', 0.03, 'effects', ctx.currentTime + 0.06); },
+    'chain':     function () {
+      [0, 0.09, 0.18].forEach(function (d) { paperFold(ctx.currentTime + d); });
+      blip(variant(1046), 0.14, 'triangle', 0.1, 'effects', ctx.currentTime + 0.3);
+      caption('chain!');
+    },
+    'pause':     function () { blip(variant(420), 0.07, 'triangle', 0.08, 'effects', ctx.currentTime, 300); caption('paused'); }
   };
 
   // ---------- authored samples: lazy fetch/decode/cache of sfx/<name>.opus ----------
@@ -133,14 +140,16 @@
     'box-rival': 'rival-box', 'extra': 'extra-turn', 'invalid': 'eraser-thump',
     'win': 'win-slap', 'lose': 'page-drop', 'drawn-game': 'tie-tap',
     'undo': 'erase-line', 'hint': 'hint-tap', 'turn': 'turn-tap',
-    'star': 'star-chime', 'tick': 'clock-tick'
+    'star': 'star-chime', 'tick': 'clock-tick',
+    'page': 'page-turn', 'chain': 'chain-flurry', 'pause': 'pencil-down'
   };
   // captions for the sample path (synthesis events carry their own)
   var SAMPLE_CAPTIONS = {
     'select': 'select', 'draw': 'line drawn', 'danger': 'risky line',
     'box': 'box claimed', 'box-rival': 'rival claimed a box', 'extra': 'extra turn',
     'invalid': 'not allowed', 'win': 'you win', 'lose': 'match lost',
-    'drawn-game': 'a tie', 'undo': 'undo', 'hint': 'hint', 'tick': 'clock low'
+    'drawn-game': 'a tie', 'undo': 'undo', 'hint': 'hint', 'tick': 'clock low',
+    'chain': 'chain!', 'pause': 'paused'
   };
   var sampleBufs = {};  // basename -> AudioBuffer
   var sampleState = {}; // basename -> 'loading' | 'ready' | 'failed'

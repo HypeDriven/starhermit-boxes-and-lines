@@ -149,6 +149,7 @@ const MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.opus': 'audio/ogg'
 };
@@ -160,6 +161,8 @@ function serveStatic(req, res, urlPath) {
   if (resolved !== ROOT && !resolved.startsWith(ROOT + path.sep)) return notFound(res);
   const base = path.basename(resolved);
   if (base.startsWith('.')) return notFound(res);
+  // Dev-only folders are never served (tests, tooling, dependencies).
+  if (/^\/(tests|tools|node_modules)(\/|$)/.test(rel)) return notFound(res);
   const mime = MIME[path.extname(resolved).toLowerCase()];
   if (!mime) return notFound(res);
   fs.stat(resolved, (err, st) => {

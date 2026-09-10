@@ -1,0 +1,27 @@
+# Boxes & Lines — sound effects manifest (canonical)
+# One clip per line:  file | event id | description of the sound | usage context
+# Event ids are the keys of EVENTS/SAMPLES in js/audio.js; main.js calls BLAudio.play(id).
+# Clips are MOSS-SoundEffect v2.0 renders, 48 kHz mono Opus (96 kbps). Every id also has a
+# WebAudio synth fallback that plays while a clip is loading or if it fails to fetch.
+# Generator entries (name, seconds, prompt, event) live in manifest.json.
+
+sfx/pencil-line.opus   | draw       | A single pencil stroke drawing a straight line across rough graph paper, short graphite scratch with a soft paper texture. | Any player draws a safe edge (rules event `draw` with gives=false).
+sfx/pencil-press.opus  | danger     | A pencil pressing down hard and scratching a tense line on paper, gritty graphite scrape ending with a faint creak. | A drawn edge gives a box its third side (`draw` with gives=true) — the "you just handed one away" tell.
+sfx/box-fold.opus      | box        | A small paper box being folded shut, crisp paper crease followed by a soft satisfying tuck. | The human player (index 0) claims a box; plays once per box in a chain.
+sfx/rival-box.opus     | box-rival  | A paper box closing with a dull muted thud on a wooden desk, slightly heavy and disappointing. | An AI rival claims a box.
+sfx/extra-turn.opus    | extra      | Two quick cheerful pencil taps on a wooden desk, light and encouraging. | Rules event `extra-turn`: the pencil stays with the player who just claimed.
+sfx/chain-flurry.opus  | chain      | A rapid flurry of three small paper boxes folding shut in quick succession, crisp creases one after another, finished by a bright cheerful pencil tap on a wooden desk. | The human claims the third box of one uninterrupted turn (chainNow reaches 3, the Chain Reaction threshold). New in this pass.
+sfx/eraser-thump.opus  | invalid    | A rubber pencil eraser thumped firmly on a wooden desk twice, blunt and refusing. | Rejected input: tapping while it is not your turn, a drawn edge, an off-sheet edge, or a server-rejected hosted move.
+sfx/erase-line.opus    | undo       | A rubber eraser rubbing out a pencil line on paper, two soft swishing strokes with crumbs falling. | Undo (practice and lessons only) restores the previous checkpoint.
+sfx/hint-tap.opus      | hint       | A fingernail tapping twice on a sheet of paper next to a diagram, light inquisitive taps. | Hint button / H key highlights the hard-AI suggestion.
+sfx/ui-tap.opus        | ui         | A single soft fingertip tap on a wooden desk, short warm knock. | Generic HUD acknowledgement (Skip animations button).
+sfx/pencil-hover.opus  | hover      | A very faint pencil tip tick touching paper, extremely short and quiet graphite contact. | Reserved for pointer hover over a free edge; the event exists in BLAudio but main.js does not currently call it.
+sfx/menu-select.opus   | select     | A gentle paper page turn with a soft finger press, confirming rustle of a single sheet. | Reserved for menu confirmations; the event exists in BLAudio but main.js does not currently call it.
+sfx/page-turn.opus     | page       | A single sheet of paper being turned over on a wooden desk, one soft crisp page flip that settles with a light paper tap. | Every screen dialog opening (title, mode lists, settings, help, results). New in this pass.
+sfx/turn-tap.opus      | turn       | One quiet pencil tick on paper marking a turn, dry and subtle. | Reserved for turn hand-over; the event exists in BLAudio but main.js does not currently call it.
+sfx/pencil-down.opus   | pause      | A wooden pencil being set down gently on a wooden desk, a small hollow tap followed by a very short roll to rest. | Pause overlay opens (button, P/Escape, gamepad Start, or auto-pause on tab hide). New in this pass.
+sfx/star-chime.opus    | star       | A small brass desk bell struck once, bright clear ding ringing out gently. | An achievement unlocks on the results path (toast "🏅 …").
+sfx/clock-tick.opus    | tick       | A single mechanical clock tick, precise wooden click of an old desk clock. | Timed sheets: once per second during the final 10 seconds.
+sfx/win-slap.opus      | win        | A celebratory palm slap on a wooden desk followed by papers fluttering and a happy pencil drumroll. | Human wins a match, or completes a Learn lesson.
+sfx/page-drop.opus     | lose       | A sheet of paper sliding off a desk and settling softly onto the floor, deflated and quiet. | Human loses a match (including time-up and resignation).
+sfx/tie-tap.opus       | drawn-game | Two pencils tapping against each other once in a friendly draw salute, hollow wooden clack. | The sheet fills with equal top scores (winner = -1).

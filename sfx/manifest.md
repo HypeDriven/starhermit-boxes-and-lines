@@ -21,3 +21,6 @@ Generated with MOSS-SoundEffect v2.0, 48 kHz mono Opus (96 kbps VBR, loudness-no
 | win-slap.opus | win | A celebratory palm slap on a wooden desk followed by papers fluttering and a happy pencil drumroll. |
 | page-drop.opus | lose | A sheet of paper sliding off a desk and settling softly onto the floor, deflated and quiet. |
 | tie-tap.opus | drawn-game | Two pencils tapping against each other once in a friendly draw salute, hollow wooden clack. |
+| page-turn.opus | page | A single sheet of paper being turned over on a wooden desk, one soft crisp page flip that settles with a light paper tap. |
+| chain-flurry.opus | chain | A rapid flurry of three small paper boxes folding shut in quick succession, crisp creases one after another, finished by a bright cheerful pencil tap on a wooden desk. |
+| pencil-down.opus | pause | A wooden pencil being set down gently on a wooden desk, a small hollow tap followed by a very short roll to rest. |

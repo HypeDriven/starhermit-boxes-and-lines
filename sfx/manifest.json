@@ -100,5 +100,23 @@
     "seconds": 2,
     "prompt": "Two pencils tapping against each other once in a friendly draw salute, hollow wooden clack.",
     "event": "drawn-game"
+  },
+  {
+    "name": "page-turn",
+    "seconds": 1,
+    "prompt": "A single sheet of paper being turned over on a wooden desk, one soft crisp page flip that settles with a light paper tap.",
+    "event": "page"
+  },
+  {
+    "name": "chain-flurry",
+    "seconds": 2,
+    "prompt": "A rapid flurry of three small paper boxes folding shut in quick succession, crisp creases one after another, finished by a bright cheerful pencil tap on a wooden desk.",
+    "event": "chain"
+  },
+  {
+    "name": "pencil-down",
+    "seconds": 1,
+    "prompt": "A wooden pencil being set down gently on a wooden desk, a small hollow tap followed by a very short roll to rest.",
+    "event": "pause"
   }
 ]

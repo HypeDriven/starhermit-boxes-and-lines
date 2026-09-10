@@ -665,6 +665,25 @@ button { font-family: inherit; font-size: inherit; }
 .help-card h3 { font-size: 1rem; }
 .help-card p { font-size: 0.9rem; color: var(--ink-soft); margin: 0; }
 
+/* ---------- Key art (decorative, assets/*.webp) ---------- */
+
+.key-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--paper-edge);
+  box-shadow: var(--shadow);
+  margin: 4px 0 14px;
+  object-fit: cover;
+}
+.key-art-title { aspect-ratio: 16 / 7; }
+.key-art-results { max-width: 220px; margin-inline: auto; aspect-ratio: 1; }
+@media (max-height: 500px) and (orientation: landscape) {
+  .key-art-title { aspect-ratio: 16 / 4; }
+  .key-art-results { max-width: 140px; }
+}
+
 /* ---------- Toast & captions ---------- */
 
 #toast {
