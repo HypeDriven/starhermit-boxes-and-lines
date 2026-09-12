@@ -228,6 +228,33 @@ button { font-family: inherit; font-size: inherit; }
   background-size: 24px 24px;
 }
 #board-mirror[hidden] { display: none !important; }
+/* The button board is a spatial grid: dots at the intersections, edge buttons
+   between them, box cells in the middle (template set per board size in JS). */
+.mirror-grid {
+  display: grid;
+  gap: 2px;
+  justify-content: center;
+  align-content: center;
+  max-width: 100%;
+}
+.mirror-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--ink-soft);
+  align-self: center; justify-self: center;
+}
+.mirror-cell {
+  border-radius: 4px;
+  background: rgba(255, 253, 246, 0.35);
+  min-width: 30px; min-height: 30px;
+}
+.mirror-cell.claimed { background: var(--paper-edge); }
+.edge-btn.h { align-self: center; min-height: 14px; height: 16px; }
+.edge-btn.v { justify-self: center; min-width: 14px; width: 16px; }
+/* Larger targets on touch screens: the edge buttons are the sole DOM path. */
+@media (pointer: coarse) {
+  .edge-btn.h { height: 22px; }
+  .edge-btn.v { width: 22px; }
+}
 
 .edge-btn {
   min-width: 28px;
@@ -743,6 +770,7 @@ button { font-family: inherit; font-size: inherit; }
 /* ---------- Responsive: portrait mobile ---------- */
 
 @media (max-width: 700px) and (orientation: portrait) {
+  #toast { bottom: calc(84px + var(--safe-b)); max-width: 94vw; border-radius: 14px; padding: 8px 14px; }
   #app-shell {
     gap: 8px;
     padding: calc(6px + var(--safe-t)) calc(8px + var(--safe-r))
@@ -786,6 +814,7 @@ button { font-family: inherit; font-size: inherit; }
                                    calc(4px + var(--safe-b)) calc(6px + var(--safe-l)); }
   #topbar {
     grid-template-columns: auto 1fr auto;
+    grid-template-areas: "objective status actions";
     gap: 6px;
   }
   .hud-block { padding: 4px 10px; font-size: 0.8rem; }
@@ -793,7 +822,10 @@ button { font-family: inherit; font-size: inherit; }
   #hud-objective .dim { display: none; }
   #hud-actions .btn { min-height: 44px; min-width: 44px; padding: 6px 10px; }
   #play-region { grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr) auto; }
-  #board-mirror { padding: 6px; }
+  /* the scene keeps most of the width; the button board is a compact side panel */
+  #board-mirror { padding: 6px; max-width: min(38vw, 320px); overflow: auto; }
+  #board-mirror .mirror-grid { grid-auto-columns: auto; }
+  #board-mirror .mirror-cell { min-width: 18px; min-height: 18px; }
 }
 
 /* ---------- Accessibility modes ---------- */

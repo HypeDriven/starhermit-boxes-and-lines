@@ -139,8 +139,8 @@ Layout: `#app-shell` is a column grid: `#topbar` (objective block, status block 
 
 - **Desktop (≥ 1024 px).** Three HUD blocks in one row; the panel is `min(680px, 92vw)` wide, `max-height 88dvh`, scrollable inside.
 - **Compact (< 1024 px).** Objective spans the top row; status and actions share the second.
-- **Portrait phone (≤ 700 px).** Status stacks above objective; HUD buttons grow to 48 px and share the row; the board mirror keeps a 12 px dot grid with edge buttons `minmax(30px, 1fr)`.
-- **Short landscape (height ≤ 500 px).** Objective sub-line hidden, buttons 44 px, and the button board moves beside the scene (`grid-template-columns: minmax(0,1fr) auto`).
+- **Portrait phone (≤ 700 px).** Status stacks above objective; HUD buttons grow to 48 px and share the row; the board mirror keeps a 12 px dot grid with edge buttons `minmax(30px, 1fr)`; the onboarding toast sits above the action tray.
+- **Short landscape (height ≤ 500 px).** Objective sub-line hidden, buttons 44 px, the HUD is a single row, and the button board moves beside the scene as a compact panel (`max-width: min(38vw, 320px)`, 18 px cell tracks) so the scene keeps most of the width.
 
 Never cut off: the four HUD buttons, the score chips, the whole button board, the Resume button on pause, and the Retry / Next / Title row on results (the panel scrolls before anything is clipped). Toasts sit `24px + safe-bottom` above the bottom edge; captions sit bottom-left (bottom-right in left-handed layout).
 
@@ -255,7 +255,7 @@ QA bar (checkable): every mode card and dialog control is reachable by mouse, to
 - The Scores screen lists only the local board; the client never reads `GET /api/v1/scores`, so server-verified ranks are not displayed.
 - Without the server, the daily date comes from the device clock.
 - Hosted play supports one human vs one server AI only; the server accepts a `timeLimitSec` the client never sends or enforces, and the rejoin form always labels the rival "Rival" at medium regardless of the level originally chosen (state, scores and moves are still exact).
-- Edge buttons on the button board are 28–30 px minimum, under the 44 px guideline; the 3D hit strips and keyboard path are the larger targets.
+- Edge buttons on the button board are 16 px thick (22 px on coarse pointers) by a 30 px cell track, under the 44 px guideline; the 3D hit strips and keyboard path are the larger targets.
 - `tests/e2e.mjs` hard-codes `/usr/bin/google-chrome`.
 - The `voice` bus and `STREAM_AV` seeded audio variants are wired but unused.
 

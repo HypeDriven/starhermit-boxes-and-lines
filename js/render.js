@@ -795,10 +795,10 @@ export function createRenderer(host, opts) {
     // Frame the sheet so it fills most of the viewport at any aspect:
     // required vertical span covers board depth, or board width/aspect.
     var aspect = Math.max(0.5, camera.aspect || 1);
-    var vSpan = Math.max(boardRows * 1.6, (boardCols * 1.45) / aspect, 2.6);
+    var vSpan = Math.max(boardRows * 1.4, (boardCols * 1.3) / aspect, 2.4);
     var dist = vSpan / (2 * Math.tan((FOV * Math.PI / 180) / 2));
-    // Steeper pitch on narrow/portrait viewports: more desk, less backdrop.
-    var h = dist * (aspect < 1 ? 0.8 : 0.55);
+    // Steep enough that far-row edges stay easy targets; steeper still on narrow viewports.
+    var h = dist * (aspect < 1 ? 0.95 : 0.8);
     out.pos.set(0, h, dist);
     out.tgt.set(0, 0, Math.min(0.4, Math.max(boardRows, boardCols) * 0.04));
     return out;
