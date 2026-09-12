@@ -211,9 +211,11 @@ The game currently ships **en-US only**. All player-facing strings are literals 
 Used:
 - **Server script** (`server.js`, zero dependencies, `PORT` env or `--port`): serves the static files (refusing dotfiles, non-whitelisted types, and anything under `tests/`, `tools/` or `node_modules/`), and exposes `/api/v1/time` (clock sync used for the daily date and countdown), `/api/v1/sessions` (+ `/:id`, `/:id/moves`, `/:id/resign`) for Hosted play, and `/api/v1/scores` (POST re-creates the game from `cfg`, replays every command, re-derives AI moves from the seed, and rejects `impossible-score` / `stale-version`; GET returns a board's top 50). Per-IP rate limit 120 requests/min; sessions expire after 2 h idle; boards keep 500 entries.
 - **Sessions / reconnect:** hosted sessions are authoritative and idempotent per `cmdId`; the client stores a marker in `sessionStorage` and offers "Rejoin hosted sheet?" after a reload.
-- **Leaderboards:** every ranked, unassisted finish is stored locally and POSTed for verification. Offline play is normal — a failed POST is silently ignored.
+- **Leaderboards:** every ranked, unassisted finish is stored locally and POSTed for verification (carrying the account id and profile nickname when a launch token is present; `server.js` stores `player` on entries). Offline play is normal — a failed POST is silently ignored. When launched with a token, the Scores screen also reads the platform leaderboard via `GET /api/v1/games/{slug}` → `leaderboardId` → `GET /api/v1/leaderboards/{id}/entries`, resolving user ids to profile nicknames (own row marked "You"); without a token it shows local bests only.
 
-Not used: platform identity (display name is a local profile field, default "Guest"), presence, platform-side achievements (achievements are local), human-vs-human matchmaking or invitations. The Scores screen shows the local board only.
+Used (launch token, `main.js#initPlatform`): the token is read from the URL fragment `#game_token=<jwt>` (optional `&session_id=`, stripped after the read; query `?token=`/`?launch_token=` kept for local dev), decoded for `sub` + `game_scope` (never hard-coded), sent as `Authorization: Bearer` on every `/api` call (time, scores, hosted sessions), and re-minted every 45 min via `POST /api/v1/games/{slug}/launch-token` (60 s retry). The profile nickname from `GET /api/v1/users/{sub}/profile` (never `/api/v1/me`, never usernames; `Player <id8>` fallback) replaces the free-text name on score rows, hosted submissions, and the Profile screen (the editable field remains as the offline fallback).
+
+Not used: presence, platform-side achievements (achievements are local), human-vs-human matchmaking or invitations.
 
 ## 13. Technical architecture
 
@@ -262,5 +264,5 @@ QA bar (checkable): every mode card and dialog control is reachable by mouse, to
 - Localized string tables and a language selector for en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR, it-IT, chosen from `navigator.languages` with a settings override.
 - Play `hover` on pointer-over of a free edge (throttled), `select` on mode-card confirmation and `turn` when the pencil passes to the human.
 - A stylesheet rule for `mirror-emphasis` that enlarges the button board and shrinks the scene.
-- Fetch and show the server-verified board per journey/challenge/daily id on the Scores screen alongside the local one.
+- Fetch and show the own-server verified board per journey/challenge/daily id (`GET /api/v1/scores?board=`) on the Scores screen alongside the local one (the platform leaderboard read is wired; the own-server board read is not).
 - Hosted play against another person via platform sessions, with presence and invitations.

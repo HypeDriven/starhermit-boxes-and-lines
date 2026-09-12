@@ -272,6 +272,7 @@ function handleSubmitScore(body) {
   if (!isObj(cfg)) return { code: 400, error: 'bad-cfg' };
   if (!Array.isArray(commands) || commands.length > 10000) return { code: 400, error: 'bad-commands' };
   const name = typeof body.name === 'string' && body.name.length ? body.name.slice(0, 16) : 'Guest';
+  const player = typeof body.player === 'string' ? body.player.slice(0, 64) : '';
   const durationMs = Number.isInteger(body.durationMs) && body.durationMs >= 0 ? body.durationMs : 0;
   const invalid = Number.isInteger(body.invalid) && body.invalid >= 0 ? body.invalid : 0;
   const assists = body.assists === true;
@@ -307,6 +308,7 @@ function handleSubmitScore(body) {
   const score = Rules.scoreBreakdown(state, 0, durationMs).total;
   const entry = {
     name: name,
+    player: player,
     score: score,
     board: board,
     seed: (cfg.seed == null ? 0 : cfg.seed) >>> 0,

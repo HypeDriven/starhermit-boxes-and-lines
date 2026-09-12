@@ -101,6 +101,126 @@ import { createRenderer, webglAvailable } from './render.js';
     return (cfg && pick(cfg.theme)) || pick(doc.settings.theme) || Content.THEMES[0];
   }
 
+  // ---------------------------------------------------------------- platform identity
+  // The platform opens the game as index.html#game_token=<jwt> (optional
+  // &session_id=), stripped after the read. The JWT carries sub = account id
+  // and game_scope = this game's slug — never hard-coded. Query forms are
+  // local-dev fallbacks. Memory only, never persisted.
+  var launchToken = null, platformUserId = null, platformSlug = null, profileName = null;
+  var profileNames = {};
+  var refreshTimer = null, refreshRetryTimer = null;
+
+  function decodeJwt(t) {
+    try {
+      var seg = String(t).split('.')[1];
+      if (!seg) return null;
+      var b64 = seg.replace(/-/g, '+').replace(/_/g, '/');
+      b64 += '='.repeat((4 - (b64.length % 4)) % 4);
+      var bin = atob(b64);
+      var bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch (e) { return null; }
+  }
+
+  function readLaunchToken() {
+    try {
+      var h = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+      var t = h.get('game_token');
+      if (t) {
+        h.delete('game_token');
+        h.delete('session_id');
+        var rest = h.toString();
+        history.replaceState(null, '', location.pathname + location.search + (rest ? '#' + rest : ''));
+        return t;
+      }
+      var q = new URLSearchParams(location.search);
+      return q.get('game_token') || q.get('token') || q.get('launch_token') || null;
+    } catch (e) { return null; }
+  }
+
+  function apiHeaders(extra) {
+    var h = extra || {};
+    if (launchToken) h['Authorization'] = 'Bearer ' + launchToken;
+    return h;
+  }
+
+  function initPlatform() {
+    launchToken = readLaunchToken();
+    if (launchToken) {
+      var claims = decodeJwt(launchToken);
+      if (!claims) launchToken = null; // malformed: standalone
+      else {
+        if (typeof claims.sub === 'string' && claims.sub) platformUserId = claims.sub;
+        if (typeof claims.game_scope === 'string' && claims.game_scope) platformSlug = claims.game_scope;
+        if (!platformUserId || !platformSlug) launchToken = null; // not a usable launch token
+      }
+    }
+    if (launchToken) {
+      scheduleTokenRefresh();
+      fetchOwnProfile();
+    }
+  }
+
+  // The token lives 60 min; scoped tokens may re-mint via the game's
+  // launch-token route. Retry a failed re-mint after ~60 s.
+  function scheduleTokenRefresh() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(refreshLaunchToken, 45 * 60 * 1000);
+  }
+  function refreshLaunchToken() {
+    if (!launchToken || !platformSlug) return Promise.resolve(false);
+    return fetch('/api/v1/games/' + encodeURIComponent(platformSlug) + '/launch-token', {
+      method: 'POST', headers: apiHeaders({ 'Content-Type': 'application/json' }), body: '{}'
+    }).then(function (r) { return r.json().catch(function () { return null; }); }).then(function (j) {
+      if (j && typeof j.token === 'string' && j.token) {
+        launchToken = j.token;
+        var claims = decodeJwt(launchToken);
+        if (claims && claims.sub) platformUserId = claims.sub;
+        if (claims && claims.game_scope) platformSlug = claims.game_scope;
+        return true;
+      }
+      retryTokenRefresh();
+      return false;
+    }).catch(function () { retryTokenRefresh(); return false; });
+  }
+  function retryTokenRefresh() {
+    if (refreshRetryTimer || !launchToken) return;
+    refreshRetryTimer = setTimeout(function () {
+      refreshRetryTimer = null;
+      refreshLaunchToken();
+    }, 60000);
+  }
+
+  // Display names: the profile nickname is the only profile read a
+  // game-scoped token may make (never /api/v1/me, never usernames).
+  // Off-platform the call fails and "Player <id8>" is used. Cached per id.
+  function profileFor(userId) {
+    if (!userId || typeof userId !== 'string') return Promise.resolve('player');
+    if (profileNames[userId]) return profileNames[userId];
+    var p = fetch('/api/v1/users/' + encodeURIComponent(userId) + '/profile', { headers: apiHeaders() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var n = j && typeof j.nickname === 'string' && j.nickname ? j.nickname : null;
+        return n || ('Player ' + userId.slice(0, 8));
+      })
+      .catch(function () { return 'Player ' + userId.slice(0, 8); });
+    profileNames[userId] = p;
+    return p;
+  }
+  function fetchOwnProfile() {
+    if (!platformUserId) return Promise.resolve(null);
+    return profileFor(platformUserId).then(function (n) {
+      profileName = n.slice(0, 40);
+      return profileName;
+    });
+  }
+  // Score rows and the profile screen show the account nickname when hosted;
+  // the free-text local name is the offline fallback only.
+  function displayName() {
+    return profileName || (doc.profileName || 'Guest');
+  }
+
   // ---------------------------------------------------------------- server clock
 
   var serverOffset = 0;
@@ -108,7 +228,7 @@ import { createRenderer, webglAvailable } from './render.js';
 
   function syncServerClock() {
     var t0 = Date.now();
-    fetch('/api/v1/time').then(function (r) {
+    fetch('/api/v1/time', { headers: apiHeaders() }).then(function (r) {
       if (!r.ok) throw new Error('bad status');
       return r.json();
     }).then(function (data) {
@@ -257,6 +377,49 @@ import { createRenderer, webglAvailable } from './render.js';
   };
   var currentScreen = null, lastFocus = null, scoresTab = 'Global', dailySubEl = null;
 
+  // Scores screen: personal bests (local) always; when launched with a
+  // token, the platform leaderboard is read through the documented route
+  // (games/{slug} → leaderboardId → entries) and rows resolve to nicknames.
+  function renderScores(body) {
+    UI.buildLeaderboard(body, ctx, { Global: Store.loadBoards().entries }, scoresTab);
+    if (!platformUserId) return;
+    fetchPlatformLeaderboard().then(function (entries) {
+      if (!entries || !entries.length || currentScreen !== 'scores') return;
+      UI.buildLeaderboard($('screen-body'), ctx, {
+        Global: Store.loadBoards().entries,
+        Platform: entries
+      }, scoresTab === 'Platform' ? 'Platform' : 'Global');
+    });
+  }
+
+  function fetchPlatformLeaderboard() {
+    if (!launchToken || !platformSlug) return Promise.resolve(null);
+    return fetch('/api/v1/games/' + encodeURIComponent(platformSlug), { headers: apiHeaders() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (g) {
+        if (!g || !g.leaderboardId) return null;
+        return fetch('/api/v1/leaderboards/' + encodeURIComponent(g.leaderboardId) +
+          '/entries?page=1&pageSize=20', { headers: apiHeaders() });
+      })
+      .then(function (r) { return r ? (r.ok ? r.json() : null) : null; })
+      .then(function (j) {
+        if (!j) return null;
+        var raw = j.entries || j.items || [];
+        return Promise.all(raw.map(function (e) {
+          var uid = e.userId || e.playerId || '';
+          return profileFor(uid).then(function (name) {
+            return {
+              name: uid && uid === platformUserId ? 'You (' + name + ')' : name,
+              score: e.score != null ? e.score : e.value,
+              board: 'platform',
+              durationMs: e.durationMs || 0
+            };
+          });
+        }));
+      })
+      .catch(function () { return null; });
+  }
+
   function overlayOpen() { return !$('screen-overlay').hidden; }
 
   function showScreen(name, data) {
@@ -273,7 +436,7 @@ import { createRenderer, webglAvailable } from './render.js';
       case 'settings': UI.buildSettingsForm(body, ctx); break;
       case 'help': UI.buildHelp(body, ctx); break;
       case 'profile': UI.buildProfile(body, ctx); break;
-      case 'scores': UI.buildLeaderboard(body, ctx, { Global: Store.loadBoards().entries }, scoresTab); break;
+      case 'scores': renderScores(body); break;
       case 'results': UI.buildResults(body, ctx, data); if (data && data.won) prependArt(body, 'results'); break;
       case 'hosted': buildHostedForm(body); break;
     }
@@ -351,6 +514,8 @@ import { createRenderer, webglAvailable } from './render.js';
     serverNow: serverNow,
     dailyCountdown: dailyCountdown,
     totalStars: totalStars,
+    accountName: null, // platform nickname when hosted (profile name is read-only then)
+    getAccountName: function () { return profileName; },
     onPlay: function (cfg) { closeScreen(); startGame(cfg); },
     onMode: function (name) {
       if (appState === 'boot') appState = 'title';
@@ -1084,7 +1249,8 @@ import { createRenderer, webglAvailable } from './render.js';
     if (curCfg.ranked && !sess.assists) {
       var sid = randomHex(8);
       var entry = {
-        name: doc.profileName || 'Guest',
+        name: displayName(),
+        playerId: platformUserId || undefined,
         score: breakdown.total,
         board: curCfg.id,
         seed: curCfg.seed,
@@ -1134,9 +1300,10 @@ import { createRenderer, webglAvailable } from './render.js';
     try {
       fetch('/api/v1/scores', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          name: entry.name, board: entry.board, cfg: sess.cfg, commands: sess.log,
+          name: entry.name, player: platformUserId || undefined,
+          board: entry.board, cfg: sess.cfg, commands: sess.log,
           assists: sess.assists, durationMs: sess.elapsedMs,
           invalid: sess.invalid[0] || 0, sessionId: sid
         })
@@ -1187,7 +1354,7 @@ import { createRenderer, webglAvailable } from './render.js';
   function hostedStart(aiLevel) {
     fetch('/api/v1/sessions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ rows: 4, cols: 4, seed: (Math.random() * 0xffffffff) >>> 0, aiLevel: aiLevel })
     }).then(function (r) {
       if (!r.ok) throw new Error('bad status');
@@ -1237,7 +1404,7 @@ import { createRenderer, webglAvailable } from './render.js';
   function hostedMove(cmd) {
     fetch('/api/v1/sessions/' + hosted.id + '/moves', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ cmdId: cmd.id, dir: cmd.dir, r: cmd.r, c: cmd.c })
     }).then(function (r) {
       return r.json().then(function (body) {
@@ -1270,7 +1437,7 @@ import { createRenderer, webglAvailable } from './render.js';
     var id = hosted.id;
     try { sessionStorage.removeItem('bl.hosted'); } catch (e) {}
     hosted = null;
-    fetch('/api/v1/sessions/' + id + '/resign', { method: 'POST' }).catch(function () {});
+    fetch('/api/v1/sessions/' + id + '/resign', { method: 'POST', headers: apiHeaders() }).catch(function () {});
     if (!silent) { closeScreen(); teardownGame(); goTitle(); }
   }
 
@@ -1278,7 +1445,7 @@ import { createRenderer, webglAvailable } from './render.js';
     var marker = null;
     try { marker = JSON.parse(sessionStorage.getItem('bl.hosted') || 'null'); } catch (e) {}
     if (!marker || !marker.id) return;
-    fetch('/api/v1/sessions/' + marker.id).then(function (r) {
+    fetch('/api/v1/sessions/' + marker.id, { headers: apiHeaders() }).then(function (r) {
       if (!r.ok) throw new Error('gone');
       return r.json();
     }).then(function (data) {
@@ -1331,6 +1498,7 @@ import { createRenderer, webglAvailable } from './render.js';
     buildShell($('game-root'));
     wireHudButtons();
     initRenderer();
+    initPlatform();
     syncServerClock();
     goTitle();
     checkHostedRejoin();

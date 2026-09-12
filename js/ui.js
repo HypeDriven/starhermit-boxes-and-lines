@@ -317,9 +317,17 @@
     var st = p.stats;
     var nameRow = el('label', { class: 'setting-row' });
     nameRow.appendChild(el('span', { text: 'Display name' }));
-    var input = el('input', { type: 'text', maxlength: '16', value: ctx.saveDoc.profileName || 'Guest', 'aria-label': 'Display name' });
-    input.addEventListener('change', function () { ctx.onName(input.value.trim().slice(0, 16) || 'Guest'); });
-    nameRow.appendChild(input);
+    var account = ctx.getAccountName ? ctx.getAccountName() : null;
+    if (account) {
+      // Hosted: the name comes from the platform profile (nickname) and is
+      // not editable here; the free-text field is the offline fallback.
+      nameRow.appendChild(el('strong', { text: account }));
+      nameRow.appendChild(el('span', { class: 'dim', text: ' (platform account)' }));
+    } else {
+      var input = el('input', { type: 'text', maxlength: '16', value: ctx.saveDoc.profileName || 'Guest', 'aria-label': 'Display name' });
+      input.addEventListener('change', function () { ctx.onName(input.value.trim().slice(0, 16) || 'Guest'); });
+      nameRow.appendChild(input);
+    }
     host.appendChild(nameRow);
 
     var grid = el('div', { class: 'stat-grid' });
