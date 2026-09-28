@@ -5,6 +5,8 @@
  * gamepad), the accessible button-board mirror, progression, and hosted play.
  */
 import { createRenderer, webglAvailable } from './render.js';
+import { resolve as resolveGfx, detectPreset } from './gfx.js';
+import { buildGraphicsPanel } from './gfx-panel.js';
 
 (function () {
   'use strict';
@@ -80,11 +82,32 @@ import { createRenderer, webglAvailable } from './render.js';
     b.classList.toggle('palette-high-visibility', s.colorPalette === 'high-visibility');
   }
 
-  function computeQuality() {
-    var t = doc.settings.graphicsTier;
-    if (t && t !== 'auto') return t;
-    if ((navigator.hardwareConcurrency || 8) <= 4) return 'low';
-    return (window.devicePixelRatio >= 2 && window.screen.width >= 1024) ? 'high' : 'medium';
+  // Graphics settings live in doc.settings.graphics (see js/gfx.js). The body
+  // mirrors the resolved preset/tiers as data-gfx-* attributes.
+  var gfxPanel = null;
+  function applyGraphicsSettings() {
+    var g = doc.settings.graphics || (doc.settings.graphics = {});
+    var info = renderer && renderer.graphicsInfo ? rCall('graphicsInfo') : null;
+    var r = null;
+    if (renderer) r = rCall('setGraphics', g);
+    if (!r) r = resolveGfx(g, info ? info.detected : detectPreset(''));
+    var b = document.body;
+    b.dataset.gfxPreset = r.preset;
+    b.dataset.gfxAuto = r.auto ? 'true' : 'false';
+    ['shadows', 'ao', 'bloom', 'grade', 'antialias', 'reflections', 'detail', 'particles', 'ambient'].forEach(function (k) {
+      b.dataset['gfx' + k.charAt(0).toUpperCase() + k.slice(1)] = r[k];
+    });
+  }
+  function buildGraphics(host) {
+    gfxPanel = buildGraphicsPanel(host, {
+      get: function () { return doc.settings.graphics || {}; },
+      save: function (next) {
+        doc.settings.graphics = next;
+        applyGraphicsSettings();
+        saveDoc();
+      },
+      info: function () { return renderer ? rCall('graphicsInfo') || null : null; }
+    });
   }
 
   function playerColors(n) {
@@ -324,7 +347,8 @@ import { createRenderer, webglAvailable } from './render.js';
         palette: themeFor(null).palette,
         playerColors: playerColors(4),
         reducedMotion: !!doc.settings.reducedMotion,
-        quality: computeQuality(),
+        graphics: doc.settings.graphics || {},
+        onGraphics: function () { if (gfxPanel) gfxPanel.refresh(); },
         onPick: onPick,
         onHover: onHover
       });
@@ -514,6 +538,7 @@ import { createRenderer, webglAvailable } from './render.js';
     serverNow: serverNow,
     dailyCountdown: dailyCountdown,
     totalStars: totalStars,
+    buildGraphics: buildGraphics,
     accountName: null, // platform nickname when hosted (profile name is read-only then)
     getAccountName: function () { return profileName; },
     onPlay: function (cfg) { closeScreen(); startGame(cfg); },
@@ -537,7 +562,6 @@ import { createRenderer, webglAvailable } from './render.js';
     onSettings: function () {
       applyBodyClasses();
       rCall('setReducedMotion', !!doc.settings.reducedMotion);
-      rCall('setQuality', computeQuality());
       rCall('setPalette', themeFor(sess ? curCfg : null).palette, playerColors(sess ? sess.state.players.length : 4));
       Audio.applySettings(doc.settings);
       Audio.setCaptions(doc.settings.captions, showCaption);
@@ -1500,6 +1524,8 @@ import { createRenderer, webglAvailable } from './render.js';
     buildShell($('game-root'));
     wireHudButtons();
     initRenderer();
+    applyGraphicsSettings();
+    rCall('showDemo');
     initPlatform();
     syncServerClock();
     goTitle();

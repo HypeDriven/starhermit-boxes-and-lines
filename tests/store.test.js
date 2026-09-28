@@ -71,3 +71,17 @@ test('sortEntries tie order: score desc → invalid asc → durationMs asc → s
   eq(sorted.map(function (e) { return e.sessionId; }), ['a', 'x', 'y', 'z', 'b', 'c']);
   eq(entries[0].sessionId, 'b', 'input array not mutated');
 });
+
+test('migrate maps the old quality tier to a graphics preset and copies graphics settings', function () {
+  var m = Store.migrate({ v: 1, settings: { graphicsTier: 'medium' } });
+  eq(m.settings.graphics, { preset: 'balanced' });
+  ok(!('graphicsTier' in m.settings), 'old key dropped');
+  eq(Store.migrate({ v: 1, settings: { graphicsTier: 'auto' } }).settings.graphics, {});
+  var g = { preset: 'high', bloom: 'off' };
+  var m2 = Store.migrate({ v: 1, settings: { graphicsTier: 'low', graphics: g } });
+  eq(m2.settings.graphics, { preset: 'high', bloom: 'off' }, 'saved graphics win over the old tier');
+  var f1 = Store.fresh(), f2 = Store.fresh();
+  f1.settings.graphics.preset = 'ultra';
+  eq(f2.settings.graphics, {}, 'fresh docs do not share the graphics object');
+  eq(Store.DEFAULT_SETTINGS.graphics, {}, 'defaults untouched');
+});

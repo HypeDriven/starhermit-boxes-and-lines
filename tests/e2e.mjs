@@ -5,7 +5,8 @@
  * title → journey stage 1 played to a results screen (clicking the on-screen
  * button-board edges, plus keyboard arrows+Enter once) → hint, pause/resume,
  * results breakdown → practice sheet with undo → settings from pause →
- * lesson 1 (Learn) → settings from title. Two passes: desktop 1280×800 and
+ * lesson 1 (Learn) → settings from title → Graphics section (presets,
+ * an override, reload persistence). Two passes: desktop 1280×800 and
  * mobile 390×844 (touch), each in a fresh browser context.
  *
  * The repo's server.js is a StarHermit authoritative game script — this test
@@ -304,6 +305,61 @@ async function playthrough(page, tag, errors) {
     await page.screenshot({ path: SHOT('title-final', tag) });
   });
 
+  await step('graphics settings: presets and overrides apply live and persist', async () => {
+    const openSettings = async () => {
+      await page.locator('.title-links .btn', { hasText: 'Settings' }).click();
+      await page.waitForFunction(() => document.getElementById('screen-title').textContent === 'Settings');
+      await page.locator('#gfx-preset').scrollIntoViewIfNeeded();
+    };
+    const body = (k) => page.evaluate((key) => document.body.dataset[key], k);
+    await openSettings();
+    // Auto resolves to Low on the headless software GPU.
+    if (await page.inputValue('#gfx-preset') !== 'auto') throw new Error('graphics preset should default to Auto');
+    const autoLabel = await page.locator('#gfx-preset option[value="auto"]').textContent();
+    if (!/Auto \(detected: \w+\)/.test(autoLabel)) throw new Error('auto label: ' + autoLabel);
+    await page.selectOption('#gfx-preset', 'low');
+    await page.waitForFunction(() => document.body.dataset.gfxPreset === 'low' && document.body.dataset.gfxAuto === 'false');
+    await page.selectOption('#gfx-preset', 'ultra');
+    await page.waitForFunction(() => document.body.dataset.gfxPreset === 'ultra' &&
+      document.querySelector('#scene-host canvas').dataset.gfxPreset === 'ultra');
+    await page.waitForTimeout(1500); // let the full post chain render a few frames
+    await page.selectOption('#gfx-preset', 'high');
+    await page.waitForFunction(() => document.body.dataset.gfxPreset === 'high');
+    const fromPreset = await page.locator('#gfx-bloom option[value="preset"]').textContent();
+    if (fromPreset !== 'From preset (On)') throw new Error('bloom preset label: ' + fromPreset);
+    await page.selectOption('#gfx-bloom', 'off');
+    await page.waitForFunction(() => document.body.dataset.gfxBloom === 'off' &&
+      document.querySelector('#scene-host canvas').dataset.gfxBloom === 'off');
+    await page.locator('#gfx-fps').check();
+    await page.waitForFunction(() => { const m = document.getElementById('fps-meter'); return m && !m.hidden; });
+    await page.locator('#gfx-fps').uncheck();
+    await page.waitForFunction(() =>
+      /\d+×\d+ px/.test(document.getElementById('gfx-summary').textContent));
+    // The panel fits the viewport: no control spills past the right edge.
+    const spill = await page.evaluate(() => {
+      const w = document.documentElement.clientWidth;
+      return [...document.querySelectorAll('#gfx-section select, #gfx-section input')]
+        .filter((n) => n.getBoundingClientRect().right > w + 1).map((n) => n.id);
+    });
+    if (spill.length) throw new Error('graphics controls cut off: ' + spill.join(','));
+    await page.screenshot({ path: SHOT('graphics', tag) });
+    // Reload: preset and override survive.
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => document.getElementById('screen-title').textContent === 'Boxes & Lines');
+    if ((await body('gfxPreset')) !== 'high' || (await body('gfxBloom')) !== 'off') {
+      throw new Error('graphics settings did not survive reload');
+    }
+    await openSettings();
+    if (await page.inputValue('#gfx-preset') !== 'high') throw new Error('preset select not restored');
+    if (await page.inputValue('#gfx-bloom') !== 'off') throw new Error('bloom override not restored');
+    // Choosing a preset clears overrides.
+    await page.selectOption('#gfx-preset', 'auto');
+    await page.waitForFunction(() => document.body.dataset.gfxAuto === 'true');
+    if (await page.inputValue('#gfx-bloom') !== 'preset') throw new Error('preset change did not clear the override');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.getElementById('screen-title').textContent === 'Boxes & Lines');
+  });
+
   const bad = errors.filter((e) => !browserNoise.test(e));
   if (bad.length) throw new Error('page errors during pass:\n' + bad.join('\n'));
 }
@@ -328,11 +384,11 @@ try {
     const page = await context.newPage();
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     page.on('console', (m) => {
-      if (m.type() !== 'error') return;
+      if (m.type() !== 'error' && m.type() !== 'warning') return;
       const url = m.location()?.url || '';
       // offline fallback: the embedded server answers /api/* with 404
       if (url.includes('/api/') && /Failed to load resource/.test(m.text())) return;
-      errors.push(`console: ${m.text()} (${url})`);
+      errors.push(`console ${m.type()}: ${m.text()} (${url})`);
     });
     try {
       await page.goto(base, { waitUntil: 'load', timeout: 30000 });

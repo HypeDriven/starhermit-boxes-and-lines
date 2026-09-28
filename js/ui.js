@@ -270,7 +270,7 @@
     host.appendChild(toggle('Mute all', 'muted'));
     host.appendChild(toggle('Captions for sound cues', 'captions'));
     host.appendChild(el('h3', { text: 'Graphics' }));
-    host.appendChild(choice('Quality tier', 'graphicsTier', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']]));
+    if (ctx.buildGraphics) ctx.buildGraphics(host);
     host.appendChild(choice('Desk theme', 'theme', Content.THEMES.map(function (t) {
       var locked = totalStars < t.unlockStars;
       return [t.id, t.name + (locked ? ' (🔒 ' + t.unlockStars + '★)' : '')];

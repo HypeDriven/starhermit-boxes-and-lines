@@ -889,3 +889,31 @@ body.left-handed #captions {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------- Graphics settings ---------- */
+.gfx-section .setting-row { flex-wrap: wrap; row-gap: 6px; }
+.gfx-section .setting-row > span { flex: 1 1 10em; min-width: 0; }
+.gfx-section select { max-width: 100%; min-width: 0; flex: 0 1 auto; }
+.gfx-scale { display: inline-flex; align-items: center; gap: 10px; }
+.gfx-scale input[type="range"] { min-width: 120px; width: min(220px, 45vw); }
+.gfx-scale output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.gfx-summary { margin: 10px 0 4px; font-size: 0.9rem; overflow-wrap: anywhere; }
+.gfx-note {
+  margin: 6px 0 10px;
+  padding: 8px 12px;
+  border-left: 4px solid var(--amber-deep);
+  background: rgba(232, 161, 63, 0.14);
+  border-radius: var(--radius);
+}
+#fps-meter {
+  position: fixed;
+  left: max(8px, env(safe-area-inset-left));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  z-index: 60;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(20, 15, 10, 0.72);
+  color: #f6ecd8;
+  font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  pointer-events: none;
+}

@@ -15,7 +15,7 @@
   var DEFAULT_SETTINGS = {
     music: 0.55, effects: 0.9, ambience: 0.5, voice: 0.8,
     muted: false, captions: false,
-    graphicsTier: 'auto',       // auto | low | medium | high
+    graphics: {},               // gfx.js saved form: {preset:'auto'|low|balanced|high|ultra, render_scale, adaptive, show_fps, <category>: tier}
     theme: 'graphite',
     reducedMotion: false,
     highContrast: false,
@@ -51,14 +51,22 @@
     if (!doc || typeof doc !== 'object') return null;
     if (doc.v > SAVE_VERSION) return null; // future format: don't clobber
     doc.v = SAVE_VERSION;
+    var g = doc.settings && doc.settings.graphics;
     doc.settings = Object.assign({}, DEFAULT_SETTINGS, doc.settings || {});
+    // Old single "quality tier" → graphics preset.
+    var oldTier = doc.settings.graphicsTier;
+    delete doc.settings.graphicsTier;
+    doc.settings.graphics = (g && typeof g === 'object' && !Array.isArray(g)) ? Object.assign({}, g) : {};
+    if (!g && oldTier && oldTier !== 'auto') {
+      doc.settings.graphics.preset = oldTier === 'medium' ? 'balanced' : oldTier;
+    }
     doc.progress = Object.assign(defaultProgress(), doc.progress || {});
     doc.progress.stats = Object.assign(defaultProgress().stats, doc.progress.stats || {});
     return doc;
   }
 
   function fresh() {
-    return { v: SAVE_VERSION, settings: Object.assign({}, DEFAULT_SETTINGS), progress: defaultProgress() };
+    return { v: SAVE_VERSION, settings: Object.assign({}, DEFAULT_SETTINGS, { graphics: {} }), progress: defaultProgress() };
   }
 
   var memoryFallback = null; // used when localStorage is unavailable

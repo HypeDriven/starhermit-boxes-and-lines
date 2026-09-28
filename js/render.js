@@ -1,13 +1,27 @@
 /* Boxes & Lines — Three.js renderer.
  * Dimensional graph-paper desk: procedural desk/paper textures, folding
- * paper boxes on claims, seeded cosmetic randomness, no post-processing.
- * ES module; depends only on the vendored three (r160).
+ * paper boxes on claims, seeded cosmetic randomness. Graphics quality comes
+ * from js/gfx.js (presets + per-category overrides); optional effects are
+ * PCF shadows fitted to the sheet, room-environment reflections, surface
+ * relief, drifting dust motes and a post chain (GTAO → bloom → grade →
+ * output → SMAA/FXAA) that is only built when something needs it.
+ * ES module; depends only on the vendored three (r160) and its addons.
  *
  * Board geometry (shared with main.js): dot spacing 1.0, centered at
  * origin. dot(r,c) at (x = c - cols/2, y = 0, z = r - rows/2).
  * h-edge (r,c) joins dots (r,c)-(r,c+1); v-edge (r,c) joins (r,c)-(r+1,c).
  */
 import * as THREE from '../vendor/three.module.min.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { detectPreset, resolve, SHADOW_MAP, PARTICLE_BUDGET } from './gfx.js';
 
 // ---------- authored framing constants ----------
 var FOV = 40;                 // low-distortion perspective
@@ -26,10 +40,33 @@ var TAP_DIST = 6;             // px: movement above this = drag, not a tap
 
 var LAYER_HIT = 7;            // dedicated interaction layer (never rendered)
 
-var QUALITY = {
-  low:    { dpr: 1.0, shadow: false, shadowMap: 0,    particles: 80,  env: false },
-  medium: { dpr: 1.5, shadow: true,  shadowMap: 1024, particles: 160, env: true },
-  high:   { dpr: 2.0, shadow: true,  shadowMap: 2048, particles: 300, env: true }
+var MAX_DUST = 48;             // ambient dust motes in the lamp light
+var KEY_DIR = new THREE.Vector3(-4, 7, 3).normalize();
+
+// Colour grade (runs in linear HDR before OutputPass): gentle S-curve, a touch
+// of saturation, warm highlights / cool shadows like lamp light on paper, and
+// a soft vignette. Blacks are lifted slightly so ink stays legible.
+var GradeShader = {
+  uniforms: { tDiffuse: { value: null }, uAmount: { value: 1.0 }, uVignette: { value: 0.34 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: [
+    'uniform sampler2D tDiffuse; uniform float uAmount; uniform float uVignette;',
+    'varying vec2 vUv;',
+    'void main() {',
+    '  vec4 src = texture2D(tDiffuse, vUv);',
+    '  vec3 c = src.rgb;',
+    '  vec3 lc = clamp(c, 0.0, 1.0);',
+    '  vec3 s = mix(lc, lc * lc * (3.0 - 2.0 * lc), 0.18);',
+    '  float l = dot(s, vec3(0.299, 0.587, 0.114));',
+    '  s = mix(vec3(l), s, 1.1);',
+    '  s *= mix(vec3(0.95, 0.98, 1.05), vec3(1.05, 1.0, 0.94), smoothstep(0.15, 0.8, l));',
+    '  s = s * 0.975 + 0.012;',
+    '  c = mix(c, s + max(c - 1.0, 0.0), uAmount);',
+    '  float d = length((vUv - 0.5) * vec2(1.1, 1.0));',
+    '  c *= 1.0 - uVignette * smoothstep(0.32, 0.85, d);',
+    '  gl_FragColor = vec4(c, src.a);',
+    '}'
+  ].join('\n')
 };
 
 var PREVIEW_COLORS = { ok: 0x6fd98a, risky: 0xe8a13f, claim: 0xffffff };
@@ -87,6 +124,76 @@ function makeDeskTexture(palette, rand) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
+}
+
+// Grayscale relief for the desk (used as bump + roughness map at "detailed"):
+// fine grain lines along the planks and sunken seams between them.
+function makeDeskRelief(rand) {
+  var cv = document.createElement('canvas');
+  cv.width = cv.height = 256;
+  var g = cv.getContext('2d');
+  g.fillStyle = '#9a9a9a';
+  g.fillRect(0, 0, 256, 256);
+  var planks = 6, pw = 256 / planks;
+  for (var i = 0; i < planks; i++) {
+    for (var s = 0; s < 40; s++) {
+      var y = rand() * 256, v = 110 + Math.floor(rand() * 90);
+      g.strokeStyle = 'rgba(' + v + ',' + v + ',' + v + ',0.55)';
+      g.lineWidth = 0.6 + rand() * 1.2;
+      g.beginPath();
+      g.moveTo(i * pw, y);
+      g.bezierCurveTo(i * pw + pw * 0.3, y + rand() * 4 - 2, i * pw + pw * 0.7, y + rand() * 4 - 2, i * pw + pw, y + rand() * 3 - 1.5);
+      g.stroke();
+    }
+    g.fillStyle = '#5a5a5a';
+    g.fillRect(i * pw - 0.5, 0, 2.5, 256);
+  }
+  var tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+// Tileable paper-fibre noise (bump map for the sheet and the folded boxes).
+function makeFibreTexture(rand) {
+  var n = 128;
+  var cv = document.createElement('canvas');
+  cv.width = cv.height = n;
+  var g = cv.getContext('2d');
+  var img = g.createImageData(n, n);
+  for (var i = 0; i < n * n; i++) {
+    var v = 118 + Math.floor(rand() * 40);
+    img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+    img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  // short fibres
+  for (var f = 0; f < 90; f++) {
+    var x = rand() * n, y = rand() * n, a = rand() * Math.PI, l = 3 + rand() * 8;
+    var c = rand() < 0.5 ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)';
+    g.strokeStyle = c;
+    g.lineWidth = 0.7;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+    g.stroke();
+  }
+  var tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+// Soft round sprite for dust motes.
+function makeMoteTexture() {
+  var cv = document.createElement('canvas');
+  cv.width = cv.height = 32;
+  var g = cv.getContext('2d');
+  var grd = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.4, 'rgba(255,255,255,0.45)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(cv);
 }
 
 function makePaperTexture(palette, rows, cols) {
@@ -155,7 +262,8 @@ export function createRenderer(host, opts) {
   var palette = opts.palette || {};
   var playerColors = (opts.playerColors || [0x3f8efc, 0xef5d4e, 0xe8b23f, 0x5fbf77]).slice(0, 4);
   var reducedMotion = !!opts.reducedMotion;
-  var qualityTier = QUALITY[opts.quality] ? opts.quality : 'medium';
+  var savedGfx = opts.graphics || {};
+  var onGraphics = typeof opts.onGraphics === 'function' ? opts.onGraphics : function () {};
   var onPick = typeof opts.onPick === 'function' ? opts.onPick : function () {};
   var onHover = typeof opts.onHover === 'function' ? opts.onHover : function () {};
 
@@ -167,10 +275,28 @@ export function createRenderer(host, opts) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QUALITY[qualityTier].dpr));
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.domElement.style.display = 'block';
   renderer.domElement.style.touchAction = 'none';
   host.appendChild(renderer.domElement);
+
+  // GPU detection → Auto preset (software renderers get Low, touch devices cap at Balanced).
+  var gpuName = (function () {
+    try {
+      var gl = renderer.getContext();
+      var s = '';
+      if (!/firefox/i.test(navigator.userAgent || '')) {
+        var ext = gl.getExtension('WEBGL_debug_renderer_info');
+        if (ext) s = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+      }
+      return String(s || gl.getParameter(gl.RENDERER) || '');
+    } catch (e) { return ''; }
+  })();
+  var isMobile = (function () {
+    try { return window.matchMedia('(hover: none) and (pointer: coarse)').matches; } catch (e) { return false; }
+  })();
+  var detected = detectPreset(gpuName, isMobile);
+  var q = resolve(savedGfx, detected);
 
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 80);
@@ -182,11 +308,23 @@ export function createRenderer(host, opts) {
   var hemi = new THREE.HemisphereLight(0xfff2e0, 0x30241a, 0.55);
   scene.add(hemi);
   var key = new THREE.DirectionalLight(palette.light != null ? palette.light : 0xffd9a8, 2.2);
-  key.position.set(-4, 7, 3);
+  key.position.copy(KEY_DIR).multiplyScalar(12);
   key.castShadow = false;
+  key.shadow.bias = -0.0004;
+  key.shadow.normalBias = 0.015;
   scene.add(key);
   key.target.position.set(0, 0, 0);
   scene.add(key.target);
+
+  // Room-environment reflections (PMREM), built lazily when enabled.
+  var pmrem = null, envRT = null;
+
+  // Shared relief textures (detail tier) — owned by the renderer, not the env.
+  var fibreTex = makeFibreTexture(mulberry32(0xF1BE));
+  fibreTex.repeat.set(3, 3);
+  var boxFibreTex = fibreTex.clone();
+  boxFibreTex.repeat.set(1, 1);
+  boxFibreTex.needsUpdate = true;
 
   // ---------- board groups ----------
   var boardGroup = new THREE.Group();   // everything rebuilt by setBoard
@@ -203,15 +341,26 @@ export function createRenderer(host, opts) {
 
   // ---------- shared materials (disposed on palette change/dispose) ----------
   var mats = {};
+  function eachMat(fn) {
+    Object.keys(mats).forEach(function (k) {
+      if (Array.isArray(mats[k])) mats[k].forEach(fn);
+      else fn(mats[k]);
+    });
+  }
   function buildMaterials() {
-    Object.keys(mats).forEach(function (k) { mats[k].dispose(); });
+    eachMat(function (m) { m.dispose(); });
     var ink = new THREE.Color(palette.dot != null ? palette.dot : 0x4a4038);
     mats = {
-      dot: new THREE.MeshStandardMaterial({ color: ink, roughness: 0.6, metalness: 0.1 }),
+      // Lacquered ink pins and pencil-lacquer edge strips (clearcoat at "detailed").
+      dot: new THREE.MeshPhysicalMaterial({ color: ink, roughness: 0.45, metalness: 0.1, clearcoatRoughness: 0.2 }),
       neutral: new THREE.MeshStandardMaterial({ color: 0x8a8a88, roughness: 0.85 }),
       hole: new THREE.MeshStandardMaterial({ color: new THREE.Color(palette.wall || 0x3a2e26).multiplyScalar(0.4), roughness: 1 }),
       player: playerColors.map(function (c) {
-        return new THREE.MeshStandardMaterial({ color: c, roughness: 0.45, metalness: 0.05 });
+        return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.42, metalness: 0.0, clearcoatRoughness: 0.18 });
+      }),
+      // Folded paper boxes: matte card stock with fibre relief.
+      box: playerColors.map(function (c) {
+        return new THREE.MeshStandardMaterial({ color: c, roughness: 0.72, metalness: 0.0 });
       }),
       stamp: playerColors.map(function (c) {
         return new THREE.MeshStandardMaterial({
@@ -222,11 +371,13 @@ export function createRenderer(host, opts) {
         return new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0 });
       })
     };
+    mats.turn.forEach(function (m) { m.userData.base = m.color.clone(); });
   }
   buildMaterials();
 
   // ---------- environment ----------
   var envDisposables = [];
+  var envMats = { desk: null, paper: null, wall: null, deskRelief: null };
   function trackEnv(res) { envDisposables.push(res); return res; }
   function clearEnv() {
     while (envGroup.children.length) {
@@ -235,13 +386,16 @@ export function createRenderer(host, opts) {
     }
     envDisposables.forEach(function (d) { if (d && d.dispose) d.dispose(); });
     envDisposables = [];
+    envMats = { desk: null, paper: null, wall: null, deskRelief: null };
   }
   function buildEnv(rows, cols) {
     clearEnv();
-    var w = Math.max(14, cols + 8), d = Math.max(12, rows + 7);
+    var w = Math.max(24, cols + 14), d = Math.max(18, rows + 11);
     // desk
     var deskTex = trackEnv(makeDeskTexture(palette, rand));
-    deskTex.repeat.set(2, 2);
+    deskTex.repeat.set(w / 7, d / 6);
+    var relief = trackEnv(makeDeskRelief(mulberry32(0xDE5C)));
+    relief.repeat.set(w / 7, d / 6);
     var deskMat = trackEnv(new THREE.MeshStandardMaterial({ map: deskTex, roughness: 0.8 }));
     var deskGeo = trackEnv(new THREE.PlaneGeometry(w, d));
     var desk = new THREE.Mesh(deskGeo, deskMat);
@@ -262,9 +416,13 @@ export function createRenderer(host, opts) {
     var wallMat = trackEnv(new THREE.MeshStandardMaterial({ color: palette.wall || 0x3a2e26, roughness: 1 }));
     var wall = new THREE.Mesh(wallGeo, wallMat);
     wall.position.set(0, 8, -Math.max(8, rows * 0.9 + 6));
+    wall.receiveShadow = true;
     envGroup.add(wall);
     scene.fog = new THREE.Fog(palette.fog != null ? palette.fog : 0x2a211b, 14, 34);
     key.color.set(palette.light != null ? palette.light : 0xffd9a8);
+    envMats = { desk: deskMat, paper: paperMat, wall: wallMat, deskRelief: relief };
+    applyDetail();
+    applyReflections();
   }
 
   // ---------- board state mirrors ----------
@@ -311,7 +469,7 @@ export function createRenderer(host, opts) {
     // and rotate up to vertical during the claim animation.
     var g = new THREE.Group();
     g.position.set(dotX(c) + 0.5, 0.004, dotZ(r) + 0.5);
-    var mat = mats.player[owner % mats.player.length];
+    var mat = mats.box[owner % mats.box.length];
     var floor = new THREE.Mesh(floorGeo, mat);
     floor.castShadow = floor.receiveShadow = true;
     g.add(floor);
@@ -347,7 +505,8 @@ export function createRenderer(host, opts) {
     stamp.position.y = PAPER_THICK + 0.002;
     stamp.scale.setScalar(0.001); // pops in with the fold
     g.add(stamp);
-    return { group: g, flaps: flaps, stamp: stamp, anim: null, done: false };
+    var paperMeshes = [floor].concat(flaps.map(function (f) { return f.hinge.children[0]; }));
+    return { group: g, flaps: flaps, stamp: stamp, anim: null, done: false, owner: owner, paper: paperMeshes };
   }
 
   function setFoldPose(view, t) {
@@ -432,6 +591,8 @@ export function createRenderer(host, opts) {
       }
     }
     fitCamera();
+    fitShadow();
+    placeDust();
   }
 
   var invisibleHitMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -580,7 +741,7 @@ export function createRenderer(host, opts) {
   // ---------- FX: pooled paper bursts & confetti ----------
   var burstPool = [];
   var confetti = null;
-  var fxBudget = function () { return QUALITY[qualityTier].particles; };
+  var fxBudget = function () { return PARTICLE_BUDGET[q.particles] || 80; };
 
   function makeBurst() {
     var n = 14;
@@ -691,6 +852,62 @@ export function createRenderer(host, opts) {
       if (cu.life > 4) confetti.visible = false;
     }
   }
+  // ---------- ambient: dust motes drifting in the lamp light ----------
+  var dust = null;
+  var dustT = 0;
+  function ensureDust() {
+    if (dust) return;
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_DUST * 3), 3));
+    var mat = new THREE.PointsMaterial({
+      size: 0.04, map: makeMoteTexture(), color: 0xffe2b8, transparent: true, opacity: 0.35,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false
+    });
+    dust = new THREE.Points(geo, mat);
+    dust.frustumCulled = false;
+    dust.userData = { base: new Float32Array(MAX_DUST * 3), phase: new Float32Array(MAX_DUST) };
+    dust.visible = false;
+    fxGroup.add(dust);
+    placeDust();
+  }
+  function placeDust() {
+    if (!dust) return;
+    var r2 = mulberry32(0xD057);
+    var u = dust.userData, p = dust.geometry.attributes.position.array;
+    var hx = Math.max(boardCols, 3) * 0.45 + 0.4, hz = Math.max(boardRows, 3) * 0.45 + 0.4;
+    for (var i = 0; i < MAX_DUST; i++) {
+      u.base[i * 3] = (r2() - 0.5) * 2 * hx;
+      u.base[i * 3 + 1] = 0.25 + r2() * 2.2;
+      u.base[i * 3 + 2] = (r2() - 0.5) * 2 * hz;
+      u.phase[i] = r2() * Math.PI * 2;
+      p[i * 3] = u.base[i * 3]; p[i * 3 + 1] = u.base[i * 3 + 1]; p[i * 3 + 2] = u.base[i * 3 + 2];
+    }
+    dust.geometry.attributes.position.needsUpdate = true;
+  }
+  function ambientOn() { return q.ambient === 'animated' && !reducedMotion; }
+  function applyAmbient() {
+    var on = ambientOn();
+    if (on) ensureDust();
+    if (dust) {
+      dust.visible = on;
+      dust.geometry.setDrawRange(0, q.particles === 'high' ? MAX_DUST : Math.round(MAX_DUST / 3));
+    }
+  }
+  function stepAmbient(dt) {
+    if (!ambientOn()) return;
+    dustT += dt;
+    if (!dust || !dust.visible) return;
+    var u = dust.userData, p = dust.geometry.attributes.position.array;
+    for (var i = 0; i < MAX_DUST; i++) {
+      var ph = u.phase[i], t = dustT * 0.12 + ph;
+      p[i * 3] = u.base[i * 3] + Math.sin(t * 1.3) * 0.35;
+      p[i * 3 + 1] = u.base[i * 3 + 1] + ((dustT * 0.05 + ph) % 1) * 0.5 - 0.25 + Math.sin(t * 2.1) * 0.08;
+      p[i * 3 + 2] = u.base[i * 3 + 2] + Math.cos(t) * 0.3;
+    }
+    dust.geometry.attributes.position.needsUpdate = true;
+    dust.material.opacity = 0.32 + Math.sin(dustT * 0.7) * 0.06;
+  }
+
   function clearFx() {
     for (var i = 0; i < activeBursts.length; i++) activeBursts[i].visible = false;
     activeBursts.length = 0;
@@ -778,10 +995,11 @@ export function createRenderer(host, opts) {
   function stepTurn(dt) {
     for (var i = 0; i < turnStrips.length; i++) {
       var mat = turnStrips[i].material;
-      var goal = i === turnTarget ? 0.85 : 0;
+      var goal = i === turnTarget ? (ambientOn() ? 0.82 + Math.sin(dustT * 2.4) * 0.1 : 0.85) : 0;
       var next = mat.opacity + (goal - mat.opacity) * Math.min(1, dt * 8);
       if (Math.abs(next - goal) < 0.01) next = goal;
       mat.opacity = next;
+      turnStrips[i].visible = next > 0.01; // keep faded seats out of depth/AO passes
     }
   }
 
@@ -933,40 +1151,255 @@ export function createRenderer(host, opts) {
   function onContextLost(e) { e.preventDefault(); contextLost = true; }
   function onContextRestored() {
     contextLost = false;
-    // three re-creates GL state on next render; rebuild canvas textures
+    // three re-creates GL state on next render; rebuild canvas textures,
+    // the PMREM environment and the post chain.
+    if (envRT) { envRT.dispose(); envRT = null; }
     buildEnv(boardRows, boardCols);
-    applyQuality(qualityTier);
-    resize();
+    applyGraphics();
   }
   el.addEventListener('webglcontextlost', onContextLost, false);
   el.addEventListener('webglcontextrestored', onContextRestored, false);
 
-  // ---------- quality ----------
-  function applyQuality(tier) {
-    var q = QUALITY[tier] || QUALITY.medium;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.dpr));
-    renderer.shadowMap.enabled = q.shadow;
-    key.castShadow = q.shadow;
-    if (q.shadow) {
-      key.shadow.mapSize.set(q.shadowMap, q.shadowMap);
-      var ext = Math.max(boardRows, boardCols, 4) + 3;
-      key.shadow.camera.left = -ext; key.shadow.camera.right = ext;
-      key.shadow.camera.top = ext; key.shadow.camera.bottom = -ext;
-      key.shadow.camera.far = 30;
+  // ---------- graphics settings ----------
+  function markMaterialsDirty() {
+    scene.traverse(function (o) {
+      if (!o.material) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { m.needsUpdate = true; });
+    });
+  }
+
+  // Shadow frustum fitted to the sheet (plus the seat tokens) so texels are spent on the play area.
+  function fitShadow() {
+    var hx = Math.max(boardCols, 2) / 2 + 1.2, hz = Math.max(boardRows, 2) / 2 + 1.2;
+    var ext = Math.sqrt(hx * hx + hz * hz) * 0.92;
+    var sc = key.shadow.camera;
+    key.position.copy(KEY_DIR).multiplyScalar(12);
+    key.target.position.set(0, 0, 0);
+    sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext;
+    sc.near = 4; sc.far = 20;
+    sc.updateProjectionMatrix();
+    renderer.shadowMap.needsUpdate = true;
+  }
+
+  function applyShadows() {
+    var size = SHADOW_MAP[q.shadows] || 0;
+    var on = size > 0;
+    var changed = renderer.shadowMap.enabled !== on;
+    renderer.shadowMap.enabled = on;
+    key.castShadow = on;
+    if (on && key.shadow.mapSize.x !== size) {
+      key.shadow.mapSize.set(size, size);
       if (key.shadow.map) { key.shadow.map.dispose(); key.shadow.map = null; }
     }
-    renderer.shadowMap.needsUpdate = true;
-    resize();
+    key.shadow.radius = q.shadows === 'high' ? 3 : 2;
+    fitShadow();
+    if (changed) markMaterialsDirty(); // lit materials recompile with/without shadow sampling
+  }
+
+  function applyDetail() {
+    var d = q.detail === 'detailed';
+    mats.player.forEach(function (m) { m.clearcoat = d ? 0.6 : 0; m.needsUpdate = true; });
+    mats.dot.clearcoat = d ? 0.7 : 0; mats.dot.needsUpdate = true;
+    mats.box.forEach(function (m) {
+      m.bumpMap = d ? boxFibreTex : null; m.bumpScale = 0.6; m.needsUpdate = true;
+    });
+    if (envMats.desk) {
+      envMats.desk.bumpMap = d ? envMats.deskRelief : null;
+      envMats.desk.bumpScale = 2.0;
+      envMats.desk.roughnessMap = d ? envMats.deskRelief : null;
+      envMats.desk.roughness = d ? 0.9 : 0.8;
+      envMats.desk.needsUpdate = true;
+    }
+    if (envMats.paper) {
+      envMats.paper.bumpMap = d ? fibreTex : null;
+      envMats.paper.bumpScale = 0.6;
+      envMats.paper.needsUpdate = true;
+    }
+  }
+
+  var ENV_INTENSITY = { dot: 0.35, neutral: 0.3, hole: 0.15, player: 0.3, box: 0.25, stamp: 0.25 };
+  function applyReflections() {
+    var on = q.reflections === 'on';
+    if (on && !envRT) {
+      try {
+        if (!pmrem) pmrem = new THREE.PMREMGenerator(renderer);
+        var room = new RoomEnvironment(renderer);
+        envRT = pmrem.fromScene(room, 0.04);
+        room.dispose();
+      } catch (e) { envRT = null; on = false; }
+    }
+    scene.environment = on && envRT ? envRT.texture : null;
+    hemi.intensity = on ? 0.32 : 0.55;
+    Object.keys(ENV_INTENSITY).forEach(function (k) {
+      [].concat(mats[k] || []).forEach(function (m) { m.envMapIntensity = ENV_INTENSITY[k]; });
+    });
+    if (envMats.desk) envMats.desk.envMapIntensity = 0.3;
+    if (envMats.paper) envMats.paper.envMapIntensity = 0.28;
+    if (envMats.wall) envMats.wall.envMapIntensity = 0.15;
+  }
+
+  // The active seat token glows (HDR colour) only when bloom can pick it up.
+  function applyGlow() {
+    var k = q.bloom === 'on' ? 1.35 : 1;
+    mats.turn.forEach(function (m) { if (m.userData.base) m.color.copy(m.userData.base).multiplyScalar(k); });
+  }
+
+  // Re-point live meshes at the current material set (after a palette rebuild).
+  function rebindMaterials() {
+    edgeGroup.children.forEach(function (o) { if (o.isInstancedMesh) o.material = mats.dot; });
+    [heMeshes, veMeshes].forEach(function (grid) {
+      grid.forEach(function (row) {
+        row.forEach(function (v) { var val = v.value; v.value = null; applyEdge(v, val); });
+      });
+    });
+    cellViews.forEach(function (row) {
+      row.forEach(function (v) {
+        if (v.holeMesh) v.holeMesh.material = mats.hole;
+        if (v.fold) {
+          var o = v.fold.owner;
+          v.fold.paper.forEach(function (m) { m.material = mats.box[o % mats.box.length]; });
+          v.fold.stamp.material = mats.stamp[o % mats.stamp.length];
+        }
+      });
+    });
+    turnStrips.forEach(function (s, i) { s.material = mats.turn[i % mats.turn.length]; });
+  }
+
+  // ---------- post-processing ----------
+  var composer = null, postKey = null, postFailed = false;
+  var pixelRatio = 0, adaptiveScale = 1, frameTimes = [], fps = 0, size = [0, 0];
+  var fpsEl = null;
+
+  function postKeyFor(w, h) {
+    return q.post && !postFailed ? [q.ao, q.bloom, q.grade, q.antialias, w, h, pixelRatio].join('|') : 'none';
+  }
+  function disposeComposer() {
+    if (!composer) return;
+    composer.passes.forEach(function (p) { if (p.dispose) p.dispose(); });
+    composer.dispose();
+    composer = null;
+  }
+  function buildPost(w, h) {
+    disposeComposer();
+    if (!q.post || postFailed) return;
+    try {
+      var pw = Math.max(1, Math.round(w * pixelRatio)), ph = Math.max(1, Math.round(h * pixelRatio));
+      var target = new THREE.WebGLRenderTarget(pw, ph, {
+        type: THREE.HalfFloatType, samples: q.antialias === 'msaa' ? 4 : 0
+      });
+      var c = new EffectComposer(renderer, target);
+      c.setPixelRatio(pixelRatio);
+      c.setSize(w, h);
+      c.addPass(new RenderPass(scene, camera));
+      if (q.ao !== 'off') {
+        var ao = new GTAOPass(scene, camera, pw, ph);
+        ao.output = GTAOPass.OUTPUT.Default;
+        ao.blendIntensity = 0.75;
+        ao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.4, thickness: 0.6, scale: 1.0, samples: q.ao === 'high' ? 16 : 8 });
+        ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: q.ao === 'high' ? 6 : 4, rings: 2, samples: q.ao === 'high' ? 16 : 8 });
+        c.addPass(ao);
+      }
+      if (q.bloom === 'on') {
+        // High threshold: only the glowing seat token, previews and bright glints bloom.
+        c.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.4, 0.88));
+      }
+      if (q.grade === 'on') c.addPass(new ShaderPass(GradeShader));
+      c.addPass(new OutputPass());
+      if (q.antialias === 'smaa') c.addPass(new SMAAPass(pw, ph));
+      if (q.antialias === 'fxaa') {
+        var fxaa = new ShaderPass(FXAAShader);
+        fxaa.material.uniforms.resolution.value.set(1 / pw, 1 / ph);
+        c.addPass(fxaa);
+      }
+      composer = c;
+    } catch (e) {
+      // Post-processing is an enhancement: render directly and let the panel say so.
+      postFailed = true;
+      disposeComposer();
+      onGraphics();
+    }
+  }
+
+  function showFpsMeter(on) {
+    if (on && !fpsEl) {
+      fpsEl = document.createElement('div');
+      fpsEl.id = 'fps-meter';
+      fpsEl.setAttribute('aria-hidden', 'true');
+      fpsEl.textContent = '… fps';
+      document.body.appendChild(fpsEl);
+    }
+    if (fpsEl) fpsEl.hidden = !on;
+  }
+
+  // Adaptive resolution: average ~90 frames, step down when slow, back up when fast.
+  function adapt(dtMs) {
+    frameTimes.push(dtMs);
+    if (frameTimes.length < 90) return;
+    var sum = 0;
+    for (var i = 0; i < frameTimes.length; i++) sum += frameTimes[i];
+    var avg = sum / frameTimes.length;
+    frameTimes.length = 0;
+    fps = 1000 / avg;
+    if (fpsEl && !fpsEl.hidden) fpsEl.textContent = Math.round(fps) + ' fps · ' + (Math.round(pixelRatio * 100) / 100) + '×';
+    if (!q.adaptive) return;
+    if (avg > 26) adaptiveScale = Math.max(0.6, Math.round((adaptiveScale - 0.1) * 100) / 100);
+    else if (avg < 14 && adaptiveScale < 1) adaptiveScale = Math.min(1, Math.round((adaptiveScale + 0.05) * 100) / 100);
+  }
+
+  function applyGraphics() {
+    applyShadows();
+    applyDetail();
+    applyReflections();
+    applyGlow();
+    applyAmbient();
+    showFpsMeter(q.showFps);
+    adaptiveScale = 1;
+    frameTimes.length = 0;
+    postKey = null; // rebuild the post chain on the next frame
+    size = [0, 0];
+    el.dataset.gfxPreset = q.preset;
+    Object.keys(q).forEach(function (k) {
+      if (typeof q[k] === 'string' && k !== 'preset') el.dataset['gfx' + k.charAt(0).toUpperCase() + k.slice(1)] = q[k];
+    });
+  }
+
+  function setGraphics(saved) {
+    savedGfx = saved || {};
+    q = resolve(savedGfx, detected);
+    applyGraphics();
+    return q;
+  }
+
+  function graphicsInfo() {
+    return {
+      gpu: gpuName,
+      detected: detected,
+      resolved: q,
+      pixels: [Math.round(size[0] * pixelRatio), Math.round(size[1] * pixelRatio)],
+      fps: Math.round(fps),
+      adaptiveScale: adaptiveScale,
+      postFailed: postFailed,
+      postActive: !!composer
+    };
   }
 
   function resize() {
+    size = [0, 0]; // picked up by the next frame
+  }
+  function applySize() {
     var w = host.clientWidth || 1, h = host.clientHeight || 1;
+    var ratio = Math.min(window.devicePixelRatio || 1, 2) * q.scale * adaptiveScale;
+    if (w === size[0] && h === size[1] && ratio === pixelRatio) return;
+    size = [w, h];
+    pixelRatio = ratio;
+    renderer.setPixelRatio(ratio);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     if (!camAnim) fitCamera(); // re-frame for the new aspect
   }
-  applyQuality(qualityTier);
+  applyGraphics();
+  applySize();
   fitCamera();
 
   // ---------- main loop ----------
@@ -978,13 +1411,24 @@ export function createRenderer(host, opts) {
   function frame(t) {
     if (disposed) return;
     rafId = requestAnimationFrame(frame);
-    var dt = lastT ? Math.min(0.1, (t - lastT) / 1000) : 0.016;
+    var dtMs = lastT ? Math.min(250, t - lastT) : 16;
+    var dt = Math.min(0.1, dtMs / 1000);
     lastT = t;
     if (document.hidden || contextLost) return;
+    adapt(dtMs);
+    applySize();
     stepEvents(dt);
     stepFx(dt);
     stepCamera(dt);
+    stepAmbient(dt);
     stepTurn(dt);
+    var k = postKeyFor(size[0], size[1]);
+    if (k !== postKey) { postKey = k; buildPost(size[0], size[1]); }
+    if (composer) {
+      try { composer.render(dt); return; } catch (e) {
+        postFailed = true; disposeComposer(); postKey = 'none'; onGraphics();
+      }
+    }
     renderer.render(scene, camera);
   }
   function startLoop() {
@@ -998,6 +1442,20 @@ export function createRenderer(host, opts) {
   }
   document.addEventListener('visibilitychange', onVisibility);
   startLoop();
+
+  // ---------- menu backdrop ----------
+  // A small sheet mid-game sits behind the title and menus until a real sheet is dealt.
+  function showDemo() {
+    var rows = 3, cols = 4, r, c;
+    var st = { rows: rows, cols: cols, holes: {}, he: [], ve: [], cells: [], current: 0 };
+    for (r = 0; r <= rows; r++) { st.he.push([]); for (c = 0; c < cols; c++) st.he[r].push(0); }
+    for (r = 0; r < rows; r++) { st.ve.push([]); for (c = 0; c <= cols; c++) st.ve[r].push(0); }
+    for (r = 0; r < rows; r++) { st.cells.push([]); for (c = 0; c < cols; c++) st.cells[r].push(-1); }
+    st.he[0][0] = st.he[1][0] = st.ve[0][0] = st.ve[0][1] = 1; st.cells[0][0] = 0;
+    st.he[1][2] = st.he[2][2] = st.ve[1][2] = st.ve[1][3] = 2; st.cells[1][2] = 1;
+    st.he[0][3] = 2; st.he[3][1] = 1; st.ve[2][4] = 2; st.ve[1][0] = 1; st.he[0][1] = 1;
+    syncState(st);
+  }
 
   // ---------- dispose ----------
   function dispose() {
@@ -1014,6 +1472,12 @@ export function createRenderer(host, opts) {
     clearBoardMeshes();
     clearEnv();
     clearFx();
+    disposeComposer();
+    if (envRT) { envRT.dispose(); envRT = null; }
+    if (pmrem) { pmrem.dispose(); pmrem = null; }
+    fibreTex.dispose(); boxFibreTex.dispose();
+    if (dust) { dust.geometry.dispose(); dust.material.map.dispose(); dust.material.dispose(); dust = null; }
+    if (fpsEl && fpsEl.parentNode) fpsEl.parentNode.removeChild(fpsEl);
     [hEdgeGeo, vEdgeGeo, hHitGeo, vHitGeo, dotGeo, flapGeo, floorGeo].forEach(function (g) { g.dispose(); });
     stampGeos.forEach(function (g) { g.dispose(); });
     stampGeos = [];
@@ -1024,11 +1488,7 @@ export function createRenderer(host, opts) {
     burstPool = [];
     if (confetti) { confetti.geometry.dispose(); confetti.material.dispose(); confetti = null; }
     invisibleHitMat.dispose();
-    Object.keys(mats).forEach(function (k) {
-      var m = mats[k];
-      if (Array.isArray(m)) m.forEach(function (x) { x.dispose(); });
-      else m.dispose();
-    });
+    eachMat(function (m) { m.dispose(); });
     renderer.dispose();
     if (el.parentNode === host) host.removeChild(el);
   }
@@ -1044,21 +1504,23 @@ export function createRenderer(host, opts) {
     setPreview: setPreview,
     setFocusEdge: setFocusEdge,
     setTurn: setTurn,
+    showDemo: showDemo,
     setPalette: function (p, pc) {
       palette = p || palette;
       if (pc && pc.length) playerColors = pc.slice(0, 4);
       buildMaterials();
       buildEnv(boardRows, boardCols);
       ensureTurnStrips();
+      rebindMaterials();
+      applyGlow();
+      markMaterialsDirty();
     },
-    setQuality: function (tier) {
-      if (!QUALITY[tier]) return;
-      qualityTier = tier;
-      applyQuality(tier);
-    },
+    setGraphics: setGraphics,
+    graphicsInfo: graphicsInfo,
     setReducedMotion: function (b) {
       reducedMotion = !!b;
       if (reducedMotion) { driftT = 0; }
+      applyAmbient();
     },
     resetCamera: resetCamera,
     resize: resize,
