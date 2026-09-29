@@ -273,3 +273,7 @@ QA bar (checkable): every mode card and dialog control is reachable by mouse, to
 - A stylesheet rule for `mirror-emphasis` that enlarges the button board and shrinks the scene.
 - Fetch and show the own-server verified board per journey/challenge/daily id (`GET /api/v1/scores?board=`) on the Scores screen alongside the local one (the platform leaderboard read is wired; the own-server board read is not).
 - Hosted play against another person via platform sessions, with presence and invitations.
+
+## Browser interference
+
+`browser-guard.js` (loaded from `index.html`) suppresses browser UI that gets in the way of play: the right-click context menu, the iOS long-press callout, copy / cut / paste, and page text selection. Text fields (inputs, textareas, selects, contenteditable) keep normal selection, context menu and clipboard behaviour.
