@@ -2,17 +2,20 @@
  * Wires the plain-script globals (BLRules, BLContent, BLSession, BLStore,
  * BLAudio, BLUI) to the Three.js renderer (js/render.js), builds the DOM
  * shell, runs the screen manager, game flow, input (pointer/keyboard/
- * gamepad), the accessible button-board mirror, progression, and hosted play.
+ * gamepad), the accessible button-board mirror and progression.
  */
 import { createRenderer, webglAvailable } from './render.js';
 import { resolve as resolveGfx, detectPreset } from './gfx.js';
 import { buildGraphicsPanel } from './gfx-panel.js';
+import { accountStrings } from './gfx-strings.js';
 
 (function () {
   'use strict';
 
   var Rules = window.BLRules, Content = window.BLContent, Session = window.BLSession,
       Store = window.BLStore, Audio = window.BLAudio, UI = window.BLUI;
+  var P = window.BLPlatform; // StarHermit adapter (js/platform.js over starhermit-sdk.js)
+  var ACCOUNT = accountStrings(navigator.languages || [navigator.language]);
 
   // ---------------------------------------------------------------- helpers
 
@@ -125,123 +128,53 @@ import { buildGraphicsPanel } from './gfx-panel.js';
   }
 
   // ---------------------------------------------------------------- platform identity
-  // The platform opens the game as index.html#game_token=<jwt> (optional
-  // &session_id=), stripped after the read. The JWT carries sub = account id
-  // and game_scope = this game's slug — never hard-coded. Query forms are
-  // local-dev fallbacks. Memory only, never persisted.
-  var launchToken = null, platformUserId = null, platformSlug = null, profileName = null;
-  var profileNames = {};
-  var refreshTimer = null, refreshRetryTimer = null;
-
-  function decodeJwt(t) {
-    try {
-      var seg = String(t).split('.')[1];
-      if (!seg) return null;
-      var b64 = seg.replace(/-/g, '+').replace(/_/g, '/');
-      b64 += '='.repeat((4 - (b64.length % 4)) % 4);
-      var bin = atob(b64);
-      var bytes = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      return JSON.parse(new TextDecoder().decode(bytes));
-    } catch (e) { return null; }
-  }
-
-  function readLaunchToken() {
-    try {
-      var h = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
-      var t = h.get('game_token');
-      if (t) {
-        h.delete('game_token');
-        h.delete('session_id');
-        var rest = h.toString();
-        history.replaceState(null, '', location.pathname + location.search + (rest ? '#' + rest : ''));
-        return t;
-      }
-      var q = new URLSearchParams(location.search);
-      return q.get('game_token') || q.get('token') || q.get('launch_token') || null;
-    } catch (e) { return null; }
-  }
-
-  function apiHeaders(extra) {
-    var h = extra || {};
-    if (launchToken) h['Authorization'] = 'Bearer ' + launchToken;
-    return h;
-  }
-
-  function initPlatform() {
-    launchToken = readLaunchToken();
-    if (launchToken) {
-      var claims = decodeJwt(launchToken);
-      if (!claims) launchToken = null; // malformed: standalone
-      else {
-        if (typeof claims.sub === 'string' && claims.sub) platformUserId = claims.sub;
-        if (typeof claims.game_scope === 'string' && claims.game_scope) platformSlug = claims.game_scope;
-        if (!platformUserId || !platformSlug) launchToken = null; // not a usable launch token
-      }
-    }
-    if (launchToken) {
-      scheduleTokenRefresh();
-      fetchOwnProfile();
-    }
-  }
-
-  // The token lives 60 min; scoped tokens may re-mint via the game's
-  // launch-token route. Retry a failed re-mint after ~60 s.
-  function scheduleTokenRefresh() {
-    if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = setInterval(refreshLaunchToken, 45 * 60 * 1000);
-  }
-  function refreshLaunchToken() {
-    if (!launchToken || !platformSlug) return Promise.resolve(false);
-    return fetch('/api/v1/games/' + encodeURIComponent(platformSlug) + '/launch-token', {
-      method: 'POST', headers: apiHeaders({ 'Content-Type': 'application/json' }), body: '{}'
-    }).then(function (r) { return r.json().catch(function () { return null; }); }).then(function (j) {
-      if (j && typeof j.token === 'string' && j.token) {
-        launchToken = j.token;
-        var claims = decodeJwt(launchToken);
-        if (claims && claims.sub) platformUserId = claims.sub;
-        if (claims && claims.game_scope) platformSlug = claims.game_scope;
-        return true;
-      }
-      retryTokenRefresh();
-      return false;
-    }).catch(function () { retryTokenRefresh(); return false; });
-  }
-  function retryTokenRefresh() {
-    if (refreshRetryTimer || !launchToken) return;
-    refreshRetryTimer = setTimeout(function () {
-      refreshRetryTimer = null;
-      refreshLaunchToken();
-    }, 60000);
-  }
-
-  // Display names: the profile nickname is the only profile read a
-  // game-scoped token may make (never /api/v1/me, never usernames).
-  // Off-platform the call fails and "Player <id8>" is used. Cached per id.
-  function profileFor(userId) {
-    if (!userId || typeof userId !== 'string') return Promise.resolve('player');
-    if (profileNames[userId]) return profileNames[userId];
-    var p = fetch('/api/v1/users/' + encodeURIComponent(userId) + '/profile', { headers: apiHeaders() })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) {
-        var n = j && typeof j.nickname === 'string' && j.nickname ? j.nickname : null;
-        return n || ('Player ' + userId.slice(0, 8));
-      })
-      .catch(function () { return 'Player ' + userId.slice(0, 8); });
-    profileNames[userId] = p;
-    return p;
-  }
-  function fetchOwnProfile() {
-    if (!platformUserId) return Promise.resolve(null);
-    return profileFor(platformUserId).then(function (n) {
-      profileName = n.slice(0, 40);
-      return profileName;
-    });
-  }
+  // Launch token + renewal, nicknames, cloud save, settings KV, bindings and
+  // invite live in BLPlatform; nothing is requested without a token.
+  var signedOutNotice = false;
+  var profileFor = P.profileFor;
+  function profileName() { return P.profile ? P.profile.displayName : null; }
   // Score rows and the profile screen show the account nickname when hosted;
   // the free-text local name is the offline fallback only.
   function displayName() {
-    return profileName || (doc.profileName || 'Guest');
+    return profileName() || (doc.profileName || 'Guest');
+  }
+  function accountLine() {
+    if (!P.hosted) return signedOutNotice ? ACCOUNT.signedOut : ACCOUNT.offline;
+    var sync = P.sync === 'synced' ? ACCOUNT.synced : P.sync === 'saving' ? ACCOUNT.saving : ACCOUNT.syncOff;
+    return ACCOUNT.playingAs.replace('{name}', profileName() || '…') + ' · ' + sync;
+  }
+  function refreshAccountLine() {
+    var line = $('account-line');
+    if (line) line.textContent = accountLine();
+  }
+  function copyInvite() {
+    var link = P.inviteLink();
+    if (!link) return;
+    var fail = function () { showToast(ACCOUNT.inviteFailed + ' ' + link); };
+    try { navigator.clipboard.writeText(link).then(function () { showToast(ACCOUNT.inviteCopied); }, fail); }
+    catch (e) { fail(); }
+  }
+
+  // Keyboard actions by KeyboardEvent.code (control.* in starhermit.txt);
+  // a signed-in player's StarHermit overrides replace these at boot.
+  var KEY_DEFAULTS = {
+    left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'], first: ['Home'], last: ['End'],
+    draw: ['Enter', 'Space', 'NumpadEnter'], undo: ['KeyU'], hint: ['KeyH'], pause: ['KeyP', 'Escape'],
+    skip: ['KeyS'], camera: ['KeyC']
+  };
+  var keyBindings = JSON.parse(JSON.stringify(KEY_DEFAULTS));
+  function actionForCode(code) {
+    for (var a in keyBindings) if (keyBindings[a].indexOf(code) >= 0) return a;
+    return null;
+  }
+  function keyName(action) {
+    var names = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓', Escape: 'Esc', Space: 'Space' };
+    return (keyBindings[action] || []).map(function (c) { return names[c] || c.replace(/^Key/, '').replace(/^Digit/, ''); }).join('/');
+  }
+  function keysText() {
+    return keyName('left') + ' ' + keyName('right') + ' ' + keyName('up') + ' ' + keyName('down') + ' move the focus, ' +
+      keyName('draw') + ' draws, ' + keyName('undo') + ' undo (practice), ' + keyName('hint') + ' hint, ' +
+      keyName('pause') + ' pause, ' + keyName('skip') + ' skip animation, ' + keyName('camera') + ' reset camera';
   }
 
   // ---------------------------------------------------------------- server clock
@@ -249,9 +182,11 @@ import { buildGraphicsPanel } from './gfx-panel.js';
   var serverOffset = 0;
   function serverNow() { return Date.now() + serverOffset; }
 
+  // Signed in only (launch token); standalone uses the local clock, no request.
   function syncServerClock() {
+    if (!P.hosted) return;
     var t0 = Date.now();
-    fetch('/api/v1/time', { headers: apiHeaders() }).then(function (r) {
+    fetch('/api/v1/time', { headers: { 'Authorization': 'Bearer ' + P.token } }).then(function (r) {
       if (!r.ok) throw new Error('bad status');
       return r.json();
     }).then(function (data) {
@@ -382,7 +317,6 @@ import { buildGraphicsPanel } from './gfx-panel.js';
   var chainNow = 0, bestChainGame = 0;
   var lessonCount = 0, lessonDone = false;
   var lastAnnouncedPlayer = -1;
-  var hosted = null;          // {id} when a hosted session is active
   var lastResultsCfg = null;
 
   function cancelAi() { aiGen++; if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; } }
@@ -397,7 +331,7 @@ import { buildGraphicsPanel } from './gfx-panel.js';
   var SCREEN_TITLES = {
     title: 'Boxes & Lines', practice: 'Practice', journey: 'Journey', challenge: 'Challenge',
     learn: 'Learn', settings: 'Settings', help: 'Help', profile: 'Profile',
-    scores: 'Scores', results: 'Results', hosted: 'Hosted play'
+    scores: 'Scores', results: 'Results'
   };
   var currentScreen = null, lastFocus = null, scoresTab = 'Global', dailySubEl = null;
 
@@ -406,7 +340,7 @@ import { buildGraphicsPanel } from './gfx-panel.js';
   // (games/{slug} → leaderboardId → entries) and rows resolve to nicknames.
   function renderScores(body) {
     UI.buildLeaderboard(body, ctx, { Global: Store.loadBoards().entries }, scoresTab);
-    if (!platformUserId) return;
+    if (!P.userId) return;
     fetchPlatformLeaderboard().then(function (entries) {
       if (!entries || !entries.length || currentScreen !== 'scores') return;
       UI.buildLeaderboard($('screen-body'), ctx, {
@@ -417,23 +351,17 @@ import { buildGraphicsPanel } from './gfx-panel.js';
   }
 
   function fetchPlatformLeaderboard() {
-    if (!launchToken || !platformSlug) return Promise.resolve(null);
-    return fetch('/api/v1/games/' + encodeURIComponent(platformSlug), { headers: apiHeaders() })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (g) {
-        if (!g || !g.leaderboardId) return null;
-        return fetch('/api/v1/leaderboards/' + encodeURIComponent(g.leaderboardId) +
-          '/entries?page=1&pageSize=20', { headers: apiHeaders() });
-      })
-      .then(function (r) { return r ? (r.ok ? r.json() : null) : null; })
+    if (!P.hosted) return Promise.resolve(null);
+    var SH = window.StarHermit;
+    return SH.leaderboard(null, { page: 1, pageSize: 20 })
       .then(function (j) {
-        if (!j) return null;
-        var raw = j.entries || j.items || [];
+        if (!j || !j.board) return null;
+        var raw = j.items || j.entries || [];
         return Promise.all(raw.map(function (e) {
           var uid = e.userId || e.playerId || '';
           return profileFor(uid).then(function (name) {
             return {
-              name: uid && uid === platformUserId ? 'You (' + name + ')' : name,
+              name: uid && uid === P.userId ? 'You (' + name + ')' : name,
               score: e.score != null ? e.score : e.value,
               board: 'platform',
               durationMs: e.durationMs || 0
@@ -452,7 +380,7 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     $('screen-title').textContent = SCREEN_TITLES[name] || name;
     dailySubEl = null;
     switch (name) {
-      case 'title': UI.buildTitle(body, ctx); appendHostedCard(body); tagDailySub(body); prependArt(body, 'title'); break;
+      case 'title': UI.buildTitle(body, ctx); tagDailySub(body); prependArt(body, 'title'); break;
       case 'practice': UI.buildPractice(body, ctx); break;
       case 'journey': UI.buildJourney(body, ctx); break;
       case 'challenge': UI.buildChallenges(body, ctx); break;
@@ -462,7 +390,6 @@ import { buildGraphicsPanel } from './gfx-panel.js';
       case 'profile': UI.buildProfile(body, ctx); break;
       case 'scores': renderScores(body); break;
       case 'results': UI.buildResults(body, ctx, data); if (data && data.won) prependArt(body, 'results'); break;
-      case 'hosted': buildHostedForm(body); break;
     }
     var ov = $('screen-overlay');
     if (ov.hidden) {
@@ -540,7 +467,13 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     totalStars: totalStars,
     buildGraphics: buildGraphics,
     accountName: null, // platform nickname when hosted (profile name is read-only then)
-    getAccountName: function () { return profileName; },
+    getAccountName: function () { return profileName(); },
+    account: function () {
+      return { signedIn: P.hosted, canSignIn: P.canSignIn(), strings: ACCOUNT, line: accountLine() };
+    },
+    onSignIn: function () { P.signIn(); },
+    onInvite: copyInvite,
+    keysText: function () { return keysText(); },
     onPlay: function (cfg) { closeScreen(); startGame(cfg); },
     onMode: function (name) {
       if (appState === 'boot') appState = 'title';
@@ -605,7 +538,6 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     cancelAi();
     stopTick();
     appState = 'preparing';
-    hosted = null;
     sess = Session.create(cfg, cfg.kind);
     curCfg = sess.cfg;
     curLesson = lesson || null;
@@ -640,7 +572,7 @@ import { buildGraphicsPanel } from './gfx-panel.js';
   function teardownGame() {
     cancelAi();
     stopTick();
-    sess = null; curCfg = null; curLesson = null; hosted = null;
+    sess = null; curCfg = null; curLesson = null;
     paused = false;
     armedEdge = null; focusEdge = null;
     $('pause-overlay').hidden = true;
@@ -852,7 +784,6 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     cancelAi();
     Session.checkpoint(sess);
     var cmd = { id: 'c' + (++cmdCounter), type: 'draw', dir: dir, r: r, c: c, player: sess.state.current };
-    if (hosted) { hostedMove(cmd); return; }
     var res = Session.apply(sess, cmd);
     if (!res.ok) {
       Audio.play('invalid');
@@ -898,7 +829,6 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     $('btn-pause-settings').addEventListener('click', function () { $('pause-overlay').hidden = true; syncInert(); showScreen('settings'); });
     $('btn-pause-help').addEventListener('click', function () { $('pause-overlay').hidden = true; syncInert(); showScreen('help'); });
     $('btn-leave').addEventListener('click', function () {
-      if (hosted) hostedResign(true);
       closeScreen();
       teardownGame();
       goTitle();
@@ -941,7 +871,6 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     stopTick();
     $('pause-overlay').hidden = false;
     syncInert();
-    syncResignButton();
     $('btn-resume').focus();
     Audio.play('pause');
     announce('Paused');
@@ -958,21 +887,10 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     announce('Resumed. ' + (Session.isHumanTurn(sess) ? 'Your turn.' : ''));
   }
 
-  function syncResignButton() {
-    var col = $('pause-panel').querySelector('.btn-col');
-    var old = $('btn-resign');
-    if (old) old.remove();
-    if (hosted) {
-      var b = el('button', { id: 'btn-resign', class: 'btn ghost', text: 'Resign match' });
-      b.addEventListener('click', function () { hostedResign(false); });
-      col.appendChild(b);
-    }
-  }
-
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) {
       Audio.suspend();
-      if (sess && appState === 'active' && !paused && !hosted) pauseGame();
+      if (sess && appState === 'active' && !paused) pauseGame();
     } else {
       Audio.resume();
     }
@@ -1032,27 +950,27 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     if (overlayOpen()) return;
     var t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
-    var k = e.key;
-    if (k === 'p' || k === 'P' || k === 'Escape') {
+    var k = actionForCode(e.code);
+    if (k === 'pause') {
       e.preventDefault();
       if (paused) resumeGame(); else pauseGame();
       return;
     }
     if (paused || !Session.isHumanTurn(sess)) return;
     switch (k) {
-      case 'ArrowLeft': e.preventDefault(); moveFocus(-1, 0); break;
-      case 'ArrowRight': e.preventDefault(); moveFocus(1, 0); break;
-      case 'ArrowUp': e.preventDefault(); moveFocus(0, -1); break;
-      case 'ArrowDown': e.preventDefault(); moveFocus(0, 1); break;
-      case 'Home': e.preventDefault(); firstLastEdge(false); break;
-      case 'End': e.preventDefault(); firstLastEdge(true); break;
-      case 'Enter': case ' ':
+      case 'left': e.preventDefault(); moveFocus(-1, 0); break;
+      case 'right': e.preventDefault(); moveFocus(1, 0); break;
+      case 'up': e.preventDefault(); moveFocus(0, -1); break;
+      case 'down': e.preventDefault(); moveFocus(0, 1); break;
+      case 'first': e.preventDefault(); firstLastEdge(false); break;
+      case 'last': e.preventDefault(); firstLastEdge(true); break;
+      case 'draw':
         if (focusEdge) { e.preventDefault(); onPick(focusEdge.dir, focusEdge.r, focusEdge.c); }
         break;
-      case 'u': case 'U': e.preventDefault(); doUndo(); break;
-      case 'h': case 'H': e.preventDefault(); doHint(); break;
-      case 's': case 'S': e.preventDefault(); rCall('skipAnimations'); break;
-      case 'c': case 'C': e.preventDefault(); rCall('resetCamera'); break;
+      case 'undo': e.preventDefault(); doUndo(); break;
+      case 'hint': e.preventDefault(); doHint(); break;
+      case 'skip': e.preventDefault(); rCall('skipAnimations'); break;
+      case 'camera': e.preventDefault(); rCall('resetCamera'); break;
     }
   });
 
@@ -1276,7 +1194,7 @@ import { buildGraphicsPanel } from './gfx-panel.js';
       var sid = randomHex(8);
       var entry = {
         name: displayName(),
-        playerId: platformUserId || undefined,
+        playerId: P.userId || undefined,
         score: breakdown.total,
         board: curCfg.id,
         seed: curCfg.seed,
@@ -1291,7 +1209,6 @@ import { buildGraphicsPanel } from './gfx-panel.js';
       var boards = Store.loadBoards();
       boards.entries = Store.sortEntries(boards.entries.concat([entry])).slice(0, 100);
       Store.saveBoards(boards);
-      postScore(entry, sid);
     }
 
     saveDoc();
@@ -1322,182 +1239,6 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     return s;
   }
 
-  function postScore(entry, sid) {
-    try {
-      fetch('/api/v1/scores', {
-        method: 'POST',
-        headers: apiHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          name: entry.name, player: platformUserId || undefined,
-          board: entry.board, cfg: sess.cfg, commands: sess.log,
-          assists: sess.assists, durationMs: sess.elapsedMs,
-          invalid: sess.invalid[0] || 0, sessionId: sid
-        })
-      }).catch(function () { /* offline play is normal */ });
-    } catch (e) { /* ignore */ }
-  }
-
-  // ---------------------------------------------------------------- hosted play
-
-  function appendHostedCard(body) {
-    var grid = body.querySelector('.card-grid');
-    if (!grid) return;
-    var card = el('button', { class: 'card', 'aria-label': 'Hosted play on the server' }, [
-      el('span', { class: 'card-title', text: 'Hosted' }),
-      el('span', { class: 'card-sub', text: 'Server-authoritative sheet' })
-    ]);
-    card.addEventListener('click', function () { showScreen('hosted'); });
-    grid.appendChild(card);
-  }
-
-  function buildHostedForm(body) {
-    body.innerHTML = '';
-    var ai = 'medium';
-    var form = el('div', { class: 'setup-form' });
-    form.appendChild(el('h3', { text: 'Server rival' }));
-    var row = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Rival difficulty' });
-    Content.AI_LEVELS.forEach(function (lv, i) {
-      var b = el('button', {
-        class: 'seg-btn' + (i === 1 ? ' on' : ''), role: 'radio',
-        'aria-checked': i === 1 ? 'true' : 'false',
-        text: Content.AI_NAMES[lv] + ' · ' + lv
-      });
-      b.addEventListener('click', function () {
-        ai = lv;
-        row.querySelectorAll('.seg-btn').forEach(function (x) { x.classList.remove('on'); x.setAttribute('aria-checked', 'false'); });
-        b.classList.add('on'); b.setAttribute('aria-checked', 'true');
-      });
-      row.appendChild(b);
-    });
-    form.appendChild(row);
-    form.appendChild(el('p', { class: 'dim', text: 'A 4×4 sheet run by the server. Rejoin works after a reload.' }));
-    var start = el('button', { class: 'btn primary big', text: 'Start hosted sheet' });
-    start.addEventListener('click', function () { hostedStart(ai); });
-    form.appendChild(start);
-    body.appendChild(form);
-  }
-
-  function hostedStart(aiLevel) {
-    fetch('/api/v1/sessions', {
-      method: 'POST',
-      headers: apiHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ rows: 4, cols: 4, seed: (Math.random() * 0xffffffff) >>> 0, aiLevel: aiLevel })
-    }).then(function (r) {
-      if (!r.ok) throw new Error('bad status');
-      return r.json();
-    }).then(function (data) {
-      var cfg = {
-        id: 'hosted-' + data.sessionId, version: Content.CONTENT_VERSION, kind: 'hosted',
-        name: 'Hosted sheet', seed: data.seed || 1, rows: 4, cols: 4,
-        players: [{ name: 'You', type: 'human' }, { name: Content.AI_NAMES[aiLevel] || 'Rival', type: 'ai', ai: aiLevel }],
-        mechanics: { undo: false, hint: false }, ranked: false,
-        goalText: 'Hosted sheet — the server is the referee.'
-      };
-      closeScreen();
-      startGame(cfg);
-      hosted = { id: data.sessionId };
-      if (data.state) mergeHostedState(data);
-      saveHostedMarker();
-      announce('Hosted sheet started.');
-    }).catch(function () {
-      track('error');
-      showToast('Server unavailable — hosted play needs the server');
-    });
-  }
-
-  function saveHostedMarker() {
-    try {
-      sessionStorage.setItem('bl.hosted', JSON.stringify({ id: hosted.id, lastTurn: sess ? sess.state.turn : 0 }));
-    } catch (e) {}
-  }
-
-  function mergeHostedState(data) {
-    if (data.state && data.state.v === Rules.STATE_VERSION) {
-      data.state.events = data.state.events || [];
-      sess.state = data.state;
-    }
-    var events = data.events || (sess.state.events || []);
-    if (events.length) {
-      handleEvents(events);
-      rCall('animateEvents', events);
-    }
-    rCall('syncState', sess.state);
-    rCall('setTurn', sess.state.current);
-    syncMirror();
-    updateHUD();
-  }
-
-  function hostedMove(cmd) {
-    fetch('/api/v1/sessions/' + hosted.id + '/moves', {
-      method: 'POST',
-      headers: apiHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ cmdId: cmd.id, dir: cmd.dir, r: cmd.r, c: cmd.c })
-    }).then(function (r) {
-      return r.json().then(function (body) {
-        if (!r.ok) throw Object.assign(new Error('bad status'), { body: body });
-        return body;
-      });
-    }).then(function (data) {
-      if (!sess || !hosted) return;
-      if (data.ok === false) {
-        Audio.play('invalid');
-        var msg = invalidText(data.reason);
-        showToast(msg); announce(msg);
-        return;
-      }
-      if (data.duplicate) return; // idempotent retry — already animated
-      mergeHostedState(data);
-      saveHostedMarker();
-      if (sess.state.over) finishGame();
-      else scheduleAiIfNeeded(); // no-op for hosted AI (server drives), harmless
-    }).catch(function (err) {
-      track('error');
-      var reason = err && err.body && err.body.error;
-      if (reason) { var m = invalidText(reason); showToast(m); announce(m); }
-      else showToast('Connection lost — your move was not sent. Try again.');
-    });
-  }
-
-  function hostedResign(silent) {
-    if (!hosted) return;
-    var id = hosted.id;
-    try { sessionStorage.removeItem('bl.hosted'); } catch (e) {}
-    hosted = null;
-    fetch('/api/v1/sessions/' + id + '/resign', { method: 'POST', headers: apiHeaders() }).catch(function () {});
-    if (!silent) { closeScreen(); teardownGame(); goTitle(); }
-  }
-
-  function checkHostedRejoin() {
-    var marker = null;
-    try { marker = JSON.parse(sessionStorage.getItem('bl.hosted') || 'null'); } catch (e) {}
-    if (!marker || !marker.id) return;
-    fetch('/api/v1/sessions/' + marker.id, { headers: apiHeaders() }).then(function (r) {
-      if (!r.ok) throw new Error('gone');
-      return r.json();
-    }).then(function (data) {
-      if (!data || !data.state || data.state.over) {
-        try { sessionStorage.removeItem('bl.hosted'); } catch (e) {}
-        return;
-      }
-      var away = data.state.turn - (marker.lastTurn || 0);
-      showToast('Rejoin hosted sheet?' + (away > 0 ? ' While you were away: ' + away + ' moves, score ' +
-        data.state.scores.join('–') + '.' : ''), 'Rejoin', function () {
-        var cfg = {
-          id: 'hosted-' + marker.id, version: Content.CONTENT_VERSION, kind: 'hosted',
-          name: 'Hosted sheet', seed: 1, rows: data.state.rows, cols: data.state.cols,
-          players: [{ name: 'You', type: 'human' }, { name: 'Rival', type: 'ai', ai: 'medium' }],
-          mechanics: { undo: false, hint: false }, ranked: false,
-          goalText: 'Hosted sheet — the server is the referee.'
-        };
-        startGame(cfg);
-        hosted = { id: marker.id };
-        mergeHostedState(data);
-        saveHostedMarker();
-        if (away > 0) showToast('While you were away: ' + away + ' moves played. Score ' + data.state.scores.join('–') + '.');
-      });
-    }).catch(function () { /* server gone; local play unaffected */ });
-  }
-
   // ---------------------------------------------------------------- resize
 
   window.addEventListener('resize', function () { rCall('resize'); });
@@ -1526,10 +1267,28 @@ import { buildGraphicsPanel } from './gfx-panel.js';
     initRenderer();
     applyGraphicsSettings();
     rCall('showDemo');
-    initPlatform();
     syncServerClock();
     goTitle();
-    checkHostedRejoin();
+    // StarHermit: remote save wins over the local copy and platform settings
+    // over saved preferences; localStorage stays the offline cache.
+    P.init({
+      onProfile: refreshAccountLine,
+      onSync: refreshAccountLine,
+      onAuth: function (a) { if (!a.signedIn) signedOutNotice = true; if (currentScreen === 'title') showScreen('title'); }
+    }).then(function (remoteRaw) {
+      if (!P.hosted) return;
+      var remote = remoteRaw ? Store.loadRaw(remoteRaw) : null;
+      if (remote) { Object.keys(doc).forEach(function (k) { delete doc[k]; }); Object.assign(doc, remote); }
+      var ps = P.platformSettings;
+      if (ps) Object.keys(Store.DEFAULT_SETTINGS).forEach(function (k) { if (k in ps) doc.settings[k] = ps[k]; });
+      saveDoc();
+      applyBodyClasses();
+      applyGraphicsSettings();
+      return P.loadBindings(KEY_DEFAULTS).then(function (b) { keyBindings = b; });
+    }).catch(function () { /* offline: local save already loaded */ }).then(function () {
+      if (currentScreen === 'title') showScreen('title');
+      refreshAccountLine();
+    });
   }
 
   boot();

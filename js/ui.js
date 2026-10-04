@@ -77,6 +77,25 @@
       row.appendChild(b);
     });
     host.appendChild(row);
+    // StarHermit account: status line, sign-in (platform host, no token), invite (signed in)
+    if (ctx.account) {
+      var acc = ctx.account();
+      if (acc.canSignIn || acc.signedIn) {
+        var row2 = el('div', { class: 'title-links' });
+        if (acc.signedIn) {
+          var inv = el('button', { class: 'btn ghost', id: 'btn-invite', text: acc.strings.invite });
+          inv.addEventListener('click', function () { ctx.onInvite(); });
+          row2.appendChild(inv);
+        }
+        if (acc.canSignIn) {
+          var si = el('button', { class: 'btn ghost', id: 'btn-sign-in', text: acc.strings.signIn });
+          si.addEventListener('click', function () { ctx.onSignIn(); });
+          row2.appendChild(si);
+        }
+        host.appendChild(row2);
+      }
+      host.appendChild(el('p', { class: 'dim account-line', id: 'account-line', text: acc.line }));
+    }
   }
 
   // ---------- practice setup ----------
@@ -298,7 +317,7 @@
       ['Extra turns chain', 'Claimed boxes grant another line immediately. Long chains swing a match; so can giving one away.'],
       ['The third side is a gift', 'A line that gives a box its third side usually hands it to your rival. The risk lamp warns you before you commit.'],
       ['Winning', 'When the sheet is full, most boxes wins. Ties break on fewer invalid moves, then faster time.'],
-      ['Controls', 'Pointer/touch: tap an edge. Keyboard: arrows move the focus, Enter draws, U undo (practice), H hint, P pause, S skip animation, C reset camera. Gamepad: stick/d-pad moves focus, A draws, B cancels, Start pauses.']
+      ['Controls', 'Pointer/touch: tap an edge. Keyboard: ' + (ctx && ctx.keysText ? ctx.keysText() : 'arrows move the focus, Enter draws, U undo (practice), H hint, P pause, S skip animation, C reset camera') + '. Gamepad: stick/d-pad moves focus, A draws, B cancels, Start pauses.']
     ];
     var grid = el('div', { class: 'help-grid' });
     cards.forEach(function (c) {

@@ -11,9 +11,9 @@
  *
  * The repo's server.js is a StarHermit authoritative game script — this test
  * instead embeds a minimal node:http static server (ephemeral port). All
- * local modes (journey, practice, learn, challenge, daily) run fully offline;
- * only "Hosted play" needs the real backend and is intentionally not covered.
- * /api/* requests are answered 404 so the client's offline fallback path runs.
+ * modes (journey, practice, learn, challenge, daily) run fully offline. A
+ * standalone load must make no same-origin /api or /ws request; any such
+ * request fails the pass.
  *
  * Run: npm run test:e2e   (or: node tests/e2e.mjs)
  */
@@ -41,9 +41,9 @@ function startServer() {
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://x');
-      if (url.pathname.startsWith('/api/')) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end('{"error":"not-found"}');
+      if (url.pathname.startsWith('/api') || url.pathname.startsWith('/ws')) {
+        res.writeHead(404);
+        res.end();
         return;
       }
       let p = path.normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
@@ -386,9 +386,13 @@ try {
     page.on('console', (m) => {
       if (m.type() !== 'error' && m.type() !== 'warning') return;
       const url = m.location()?.url || '';
-      // offline fallback: the embedded server answers /api/* with 404
-      if (url.includes('/api/') && /Failed to load resource/.test(m.text())) return;
       errors.push(`console ${m.type()}: ${m.text()} (${url})`);
+    });
+    page.on('request', (r) => {
+      const u = new URL(r.url());
+      if (u.origin === new URL(base).origin && /^\/(api|ws)(\/|$)/.test(u.pathname)) {
+        errors.push(`own-server request while standalone: ${u.pathname}`);
+      }
     });
     try {
       await page.goto(base, { waitUntil: 'load', timeout: 30000 });

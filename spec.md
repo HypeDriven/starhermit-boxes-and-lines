@@ -9,11 +9,11 @@
 | | |
 |---|---|
 | Genre | Turn-based territory strategy (pencil-and-paper classic, single sheet) |
-| Players | 1 human vs 1–3 AI rivals locally; 1 human vs 1 server-run AI in Hosted play |
+| Players | 1 human vs 1–3 AI rivals locally |
 | Session length | 2×3 lesson sheets ≈ 1 min; 4×4 ≈ 3–5 min; 7×7 journey finale ≈ 10 min |
 | Platforms | Desktop and mobile browsers (portrait and landscape); WebGL optional |
 | Rendering | Three.js r160 (vendored) scene of desk, paper, dots, edges and folding boxes, with a semantic HTML "button board" mirror that is always on screen and fully playable on its own |
-| Networking | Optional Node server (`server.js`) for hosted sessions, verified scores and clock sync; every local mode works offline |
+| Networking | None standalone (no `/api` or `/ws` request without a launch token); signed in, only `GET /api/v1/time` for clock sync. `server.js` is a static host whose session/score routes the client no longer calls |
 
 File map (everything that ships or tests the game):
 
@@ -28,26 +28,26 @@ File map (everything that ships or tests the game):
 | `js/store.js` | Checksummed save document in `localStorage`, local leaderboard, achievement catalogue |
 | `js/audio.js` | WebAudio: four buses, synthesized cues, lazily fetched `sfx/*.opus` samples, room ambience, generative pad, captions hook |
 | `js/ui.js` | DOM builders for every dialog screen (title, practice, journey, challenge, learn, results, settings, help, profile, scores) |
-| `js/main.js` | Orchestrator: shell DOM, screen state machine, game flow, AI pacing, timers, input (pointer, keyboard, gamepad), button board, progression, hosted play |
+| `js/main.js` | Orchestrator: shell DOM, screen state machine, game flow, AI pacing, timers, input (pointer, keyboard, gamepad), button board, progression |
 | `js/render.js` | Three.js renderer: procedural desk/paper textures and relief maps, edges, folding boxes, preview ghost, focus ring, turn tokens, particles, dust motes, camera, picking, menu-backdrop sheet, graphics settings (`setGraphics`, `graphicsInfo`), post chain and adaptive resolution |
 | `js/gfx.js` | Pure graphics quality model: presets, categories and tiers, `detectPreset`, `resolve`, `presetTier`, `choosePreset`, `describe` |
 | `js/gfx-panel.js` | Graphics section of the Settings screen (controls `#gfx-preset`, `#gfx-scale`, `#gfx-<category>`, `#gfx-adaptive`, `#gfx-fps`, `#gfx-summary`, `#gfx-note`) |
 | `js/gfx-strings.js` | Graphics-section strings for en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR, it-IT |
-| `server.js` | StarHermit game script + static host: `/api/v1/time`, hosted sessions, authoritative score replay, per-board leaderboards |
+| `server.js` | StarHermit game script + static host: `/api/v1/time` (the only route the client calls, signed in only), server-side sessions, authoritative score replay, per-board leaderboards |
 | `vendor/three.module.min.js` | Three.js r160 |
 | `vendor/three/addons/` | r160 addons (three@0.160.1): EffectComposer, RenderPass, ShaderPass, OutputPass, GTAOPass, UnrealBloomPass, SMAAPass and their shaders, FXAAShader, RoomEnvironment |
 | `sfx/` | 20 Opus clips, `manifest.txt` (canonical binding table), `manifest.json` (generator entries), `manifest.md` (generator report) |
 | `assets/title-art.webp`, `assets/results-art.webp` | Key art shown on the title dialog and on a winning results dialog |
 | `coverart.png`, `icon.png`, `favicon.svg` | Platform cover (1200×675), icon, tab icon |
 | `starhermit.txt` | Platform manifest: `name`, `launch`, `owner`, `server`, `cover` |
-| `tests/run.js`, `tests/*.test.js`, `tests/server.test.mjs`, `tests/gfx.test.mjs`, `tests/e2e.mjs` | Unit runner, rules/session/content/store suites, server API suite, graphics model suite (`node --test`), Playwright playthrough |
+| `tests/run.js`, `tests/*.test.js`, `tests/server.test.mjs`, `tests/gfx.test.mjs`, `tests/platform.test.mjs`, `tests/e2e.mjs` | Unit runner, rules/session/content/store suites, server API suite, graphics model suite (`node --test`), Playwright playthrough |
 | `tools/validate-content.js`, `tools/smoke-browser.cjs` | Dev-only content validator (used by `content.test.js`) and browser smoke helper; never served |
 
 ## 2. Vision and design pillars
 
 1. **The paper is the game.** Every rule is visible on the sheet: undrawn edges are faint, drawn edges carry their author's colour, a claimed box physically folds up and takes a shape stamp. Rules in: state that can be read from the board alone; a DOM board that mirrors the 3D one exactly. Rules out: hidden modifiers, off-board resources, any information the sheet does not show.
 2. **The third side is the drama.** The whole tension of dots-and-boxes is deciding who has to open a box first. The game makes that moment legible before commitment (green/amber/white preview ghost, "Risky: gives away a box" HUD line, `pencil-press` cue on a giveaway) and rewards the pay-off (extra turn cue, chain flurry at three boxes, Chain Reaction achievement). Rules out: AI that ignores the third side above easy, hints that do anything other than what the hard AI would do.
-3. **Determinism you can audit.** Every match is a seed plus an ordered command list. AI moves come from the rules RNG stream, so a replay reproduces the rival's exact play and the server can refuse forged scores. Rules in: seeded prefill, seeded daily, `hashState`, replay envelopes. Rules out: `Math.random()` anywhere in rules or AI; hints that consume the stream.
+3. **Determinism you can audit.** Every match is a seed plus an ordered command list. AI moves come from the rules RNG stream, so a replay reproduces the rival's exact play and a verifier (`server.js`) can refuse forged scores. Rules in: seeded prefill, seeded daily, `hashState`, replay envelopes. Rules out: `Math.random()` anywhere in rules or AI; hints that consume the stream.
 4. **Never trapped by the pretty layer.** The 3D scene is cosmetic. If WebGL is missing, fails, or the tab is on a slow phone, the button board, keyboard and gamepad paths play the identical game, and every renderer call is wrapped so a rendering fault cannot stop play. Rules out: any action that exists only in the canvas.
 5. **Short warm sessions.** One tap from the title starts the next journey stage; a results dialog explains the score in four integer lines; the desk lamp, paper sounds and unhurried pad keep the mood of an evening at a desk rather than an arcade. Rules out: timers on non-timed sheets, streak-shaming, monetised boosts.
 
@@ -110,7 +110,6 @@ Worked example: journey stage 1 (2×3, par 120 s) won 4–2 in 80 s → 400 + 50
 | Practice | title card → Practice | Sketch 3×3 / Study 4×4 / Master Sheet 6×6, rival level, fresh random seed | no | yes / yes |
 | Challenge | title card → Challenge | Sixty-Second Desk (3×3, 60 s clock), The Long Sheet (6×7), Head Start (Margot opens, 6 inked lines), Four Pencils (three rivals), First to Five (race to 5 boxes, hard AI), Surveyor's Exam (4×4 vs Vega, no hints) | yes | no / per challenge |
 | Learn | title card → Learn | L1 draw two lines; L2 close a prepared box; L3 claim two boxes in one turn; L4 draw three safe lines; L5 full 3×3 vs Pip. Goals match rules events (`draw`, `box`, `draw-safe`, `over`) | no | yes / yes |
-| Hosted | title card → Hosted | 4×4 vs a server-run rival (level chosen on the form); server is the referee; rejoin offered after reload | no | no / no |
 
 Difficulty curve: sheet area grows 6 → 49 boxes; rival level steps at stages 5 (Margot) and 15 (Vega); the number of pencils rises to 3 at stage 6 and 4 at stage 19; clocks appear at 10, 17, 20, 23, 30, 34, 38, 40; star margins rise from 1 to 5.
 
@@ -137,7 +136,7 @@ Input locking: `onPick` ignores input unless a session is active, unpaused and i
 
 ## 7. Screens and UI flow
 
-`main.js` keeps `appState`: `boot → title → mode-select → preparing → active ↔ paused → resolving → results → progression`. Dialog screens are one `#screen-overlay` panel (`role=dialog`, `aria-modal`) whose body is rebuilt by `showScreen(name)`: title, practice, journey, challenge, learn, settings, help, profile, scores, results, hosted. While any overlay is open the shell is `inert`. The ← Back button (and Escape) is hidden on the title when no sheet is in play, so a finished sheet can never strand the player.
+`main.js` keeps `appState`: `boot → title → mode-select → preparing → active ↔ paused → resolving → results → progression`. Dialog screens are one `#screen-overlay` panel (`role=dialog`, `aria-modal`) whose body is rebuilt by `showScreen(name)`: title, practice, journey, challenge, learn, settings, help, profile, scores, results. While any overlay is open the shell is `inert`. The ← Back button (and Escape) is hidden on the title when no sheet is in play, so a finished sheet can never strand the player.
 
 Layout: `#app-shell` is a column grid: `#topbar` (objective block, status block with turn indicator / score chips / clock, actions block with Hint · Undo · Skip · Pause) above `#play-region`, which stacks `#scene-host` (3D canvas, `role=application`) over `#board-mirror` (the button board). Padding on the shell and overlays adds the four `env(safe-area-inset-*)` values.
 
@@ -215,26 +214,34 @@ The game currently ships **en-US only**, except the Settings screen's Graphics c
 `starhermit.txt` declares `name=Boxes & Lines`, `launch=index.html`, `owner=<uuid>`, `server=server.js`, `cover=coverart.png`, following the manifest conventions at https://wiki.starhermit.com/.
 
 Used:
-- **Server script** (`server.js`, zero dependencies, `PORT` env or `--port`): serves the static files (refusing dotfiles, non-whitelisted types, and anything under `tests/`, `tools/` or `node_modules/`), and exposes `/api/v1/time` (clock sync used for the daily date and countdown), `/api/v1/sessions` (+ `/:id`, `/:id/moves`, `/:id/resign`) for Hosted play, and `/api/v1/scores` (POST re-creates the game from `cfg`, replays every command, re-derives AI moves from the seed, and rejects `impossible-score` / `stale-version`; GET returns a board's top 50). Per-IP rate limit 120 requests/min; sessions expire after 2 h idle; boards keep 500 entries.
-- **Sessions / reconnect:** hosted sessions are authoritative and idempotent per `cmdId`; the client stores a marker in `sessionStorage` and offers "Rejoin hosted sheet?" after a reload.
-- **Leaderboards:** every ranked, unassisted finish is stored locally and POSTed for verification (carrying the account id and profile nickname when a launch token is present; `server.js` stores `player` on entries). Offline play is normal — a failed POST is silently ignored. When launched with a token, the Scores screen also reads the platform leaderboard via `GET /api/v1/games/{slug}` → `leaderboardId` → `GET /api/v1/leaderboards/{id}/entries`, resolving user ids to profile nicknames (own row marked "You"); without a token it shows local bests only.
+- **Server script** (`server.js`, zero dependencies, `PORT` env or `--port`): serves the static files (refusing dotfiles, non-whitelisted types, and anything under `tests/`, `tools/` or `node_modules/`), and exposes `/api/v1/time` (clock sync used for the daily date and countdown — the only route the client calls, and only when signed in). Kept for the server tests but not called by the client: `/api/v1/sessions` (+ `/:id`, `/:id/moves`, `/:id/resign`) and `/api/v1/scores` (POST re-creates the game from `cfg`, replays every command, re-derives AI moves from the seed, and rejects `impossible-score` / `stale-version`; GET returns a board's top 50). Per-IP rate limit 120 requests/min; sessions expire after 2 h idle; boards keep 500 entries.
+- **Leaderboards:** every ranked, unassisted finish is stored on the device (carrying the account id when a launch token is present); nothing is submitted to an own-server route. When launched with a token, the Scores screen also reads the platform leaderboard via `GET /api/v1/games/{slug}` → `leaderboardId` → `GET /api/v1/leaderboards/{id}/entries`, resolving user ids to profile nicknames (own row marked "You"); without a token it shows local bests only.
 
-Used (launch token, `main.js#initPlatform`): the token is read from the URL fragment `#game_token=<jwt>` (optional `&session_id=`, stripped after the read; query `?token=`/`?launch_token=` kept for local dev), decoded for `sub` + `game_scope` (never hard-coded), sent as `Authorization: Bearer` on every `/api` call (time, scores, hosted sessions), and re-minted every 45 min via `POST /api/v1/games/{slug}/launch-token` (60 s retry). The profile nickname from `GET /api/v1/users/{sub}/profile` (never `/api/v1/me`, never usernames; `Player <id8>` fallback) replaces the free-text name on score rows, hosted submissions, and the Profile screen (the editable field remains as the offline fallback).
+StarHermit platform (through `starhermit-sdk.js`, a verbatim copy of the canonical client, and `js/platform.js` = `window.BLPlatform`, both loaded before every other script; the adapter calls `StarHermit.init()` as it loads; without a token no StarHermit request is made):
+- **Launch token and renewal:** the SDK reads `#game_token=<jwt>[&session_id=]` or a sign-in return `#access_token=…`, strips it, takes the slug from `game_scope` (never hard-coded) and renews via `POST /api/v1/games/{slug}/launch-token`; the current token also rides as `Authorization: Bearer` on `GET /api/v1/time`. If renewal is refused the title account line reads "Signed out of StarHermit — progress stays on this device." and play continues locally.
+- **Sign-in:** on `*.starhermit.com` without a token the title shows **Sign in with StarHermit** (`StarHermit.signIn()`); hidden when signed in and locally.
+- **Identity:** the title account line shows "Playing as <nickname> · <sync status>"; the nickname (`GET /api/v1/users/{id}/profile`, never `/api/v1/me`; `Player <id8>` fallback, no request when signed out) replaces the free-text local name on the profile screen and on score posts, which also carry the account id.
+- **Platform leaderboard:** the Scores screen adds a Platform tab read through the SDK (first board of `GET /api/v1/games/{slug}/leaderboards` → entries), rows resolved to nicknames and the own row marked "You". Clients never submit to it.
+- **Cloud save:** the whole save document (settings + progress, the checksummed `boxesandlines.save.v1` wrapper) mirrors to `/api/v1/me/cloud-saves/game:{slug}`. On start the remote copy wins; localStorage stays the offline cache; every save queues a debounced (2 s) upload, flushed on `pagehide`/hidden.
+- **Settings KV:** every save sends the changed `settings` keys with `PATCH /api/v1/games/{slug}/settings`; on start the platform's values override the save document's.
+- **Invite:** when signed in the title shows **Invite a friend**, which copies `StarHermit.inviteLink()` and confirms with a toast (the link is shown if the clipboard is blocked).
+- **Controls:** `starhermit.txt` declares 12 `control.*` actions (`left`, `right`, `up`, `down`, `first`, `last`, `draw`, `undo`, `hint`, `pause`, `skip`, `camera`); keydown routes by `event.code` through `StarHermit.loadBindings` (defaults standalone) and Help → Controls lists the effective keys. Escape still closes dialogs.
+- **Strings:** sign-in, invite, toast and account-line texts exist in all nine locales (`ACCOUNT_STRINGS` in `js/gfx-strings.js`).
 
-Not used: presence, platform-side achievements (achievements are local), human-vs-human matchmaking or invitations.
+Not used: presence, platform-side achievements (achievements are local; `server.js` is an HTTP host, not a platform script reporting `achievements`), platform sessions/matchmaking/session invites/chat/replays, the `server.js` session and score routes, avatars (no player chip).
 
 ## 13. Technical architecture
 
 - **Module boundaries.** `rng`, `rules`, `content`, `session`, `store` are UMD modules shared verbatim by the browser and Node (server and tests). `audio`, `ui` are browser globals; `main.js` and the graphics modules (`gfx.js`, `gfx-panel.js`, `gfx-strings.js`) are ES modules; `main.js` is the only importer of `render.js`, so the renderer can fail without the game failing (`rCall` wraps every renderer call in try/catch).
 - **Determinism and replay.** `session.envelope()` = `{v, contentVersion, cfg, seed, commands, finalHash, result}`; `session.replay(env)` recomputes the hash and returns `null` if any AI command differs from what `aiMove` produces at that point. The server's score endpoint runs the same check.
-- **Persistence.** `localStorage['boxesandlines.save.v1']` holds `{sum, payload}` where `sum` is FNV-1a of the payload; a mismatch or a future version yields a fresh document rather than a crash; a memory fallback covers private mode. Leaderboard cache: `boxesandlines.leaderboards.v1` (top 100). Hosted marker: `sessionStorage['bl.hosted']`.
+- **Persistence.** `localStorage['boxesandlines.save.v1']` holds `{sum, payload}` where `sum` is FNV-1a of the payload; a mismatch or a future version yields a fresh document rather than a crash; a memory fallback covers private mode. Leaderboard cache: `boxesandlines.leaderboards.v1` (top 100).
 - **Timing.** AI reply delay 450 ms; session tick 250 ms; countdown refresh 1 s; gamepad poll 100 ms; all timers stop on pause, tab hide (which auto-pauses local play) and teardown.
 - **Performance budget.** Board meshes are rebuilt only on `setBoard`; particles and confetti are pooled (`MAX_BURSTS` 48, `MAX_CONFETTI` 260); textures are procedural canvases sized per theme; pixel ratio = min(DPR, 2) × preset scale × adaptive scale; shadow maps and the post chain are off on the Low preset; WebGL context loss is handled by rebuilding textures, the environment map and the post chain. Shipped images total < 500 KB; Opus clips are 1–3 s mono at 96 kbps.
-- **E2E driving.** `tests/e2e.mjs` starts its own static server (answering `/api/*` with 404 to exercise the offline path), launches Chrome via `playwright-core`, and plays only through visible UI: it reads the button board's `aria-label`s to choose competent edges, clicks HUD buttons, presses real keys, and checks the DOM after each step.
+- **E2E driving.** `tests/e2e.mjs` starts its own static server (any same-origin `/api` or `/ws` request fails the pass), launches Chrome via `playwright-core`, and plays only through visible UI: it reads the button board's `aria-label`s to choose competent edges, clicks HUD buttons, presses real keys, and checks the DOM after each step.
 
 ## 14. Testing and acceptance criteria
 
-`npm test` = `node tests/run.js` (38 unit tests: 16 rules, 10 session, 6 content, 6 store) then `node tests/server.test.mjs` (8 API checks on a real `server.js` on an ephemeral port) then `node --test tests/gfx.test.mjs` (9 graphics-model checks: GPU detection and mobile cap, resolve with presets/overrides/scale clamp, preset clears overrides, preset table completeness, cost summary, locale strings). Covered properties: board shapes and holes; prefill never completes a box; claim/extra-turn/pass ordering; two-box claims; terminal reasons and tie detection; invalid commands leave state untouched; AI determinism from `state.rng`; hint does not consume the stream; score breakdown; serialize/deserialize; undo cascade; duplicate command ids; replay envelope round-trip; content validator (unique ids, themes, daily immutability); save checksum, corruption and migration (including the old quality tier → graphics preset); hosted create → move → reconnect → resign; an honest playthrough posts a verified score; a fabricated log where the rival plays to lose is rejected; stale versions rejected; dotfiles not served.
+`npm test` = `node tests/run.js` (38 unit tests: 16 rules, 10 session, 6 content, 6 store) then `node tests/server.test.mjs` (8 API checks on a real `server.js` on an ephemeral port) then `node --test tests/gfx.test.mjs tests/platform.test.mjs` (StarHermit adapter in a sandbox with a stubbed `fetch`: no requests standalone; token read and fragment stripped; nickname; settings patch of changed keys; cloud-save round trip through `game:<slug>`; control overrides; sign-out on refused renewal; account strings in all nine locales; plus 9 graphics-model checks: GPU detection and mobile cap, resolve with presets/overrides/scale clamp, preset clears overrides, preset table completeness, cost summary, locale strings). Covered properties: board shapes and holes; prefill never completes a box; claim/extra-turn/pass ordering; two-box claims; terminal reasons and tie detection; invalid commands leave state untouched; AI determinism from `state.rng`; hint does not consume the stream; score breakdown; serialize/deserialize; undo cascade; duplicate command ids; replay envelope round-trip; content validator (unique ids, themes, daily immutability); save checksum, corruption and migration (including the old quality tier → graphics preset); hosted create → move → reconnect → resign; an honest playthrough posts a verified score; a fabricated log where the rival plays to lose is rejected; stale versions rejected; dotfiles not served.
 
 `npm run test:e2e` (needs `/usr/bin/google-chrome`) runs the same playthrough at 1280×800 and at 390×844 with touch: title with ≥ 6 cards → journey stage 1 → hint highlights an edge → arrows + Enter draw → pause/resume → sheet played to Results via the button board (all 17 edges) → breakdown rows and persisted save → Back returns to a usable title (regression) → practice sheet with undo → settings from pause (High contrast applies; Escape closes only the dialog) → leave sheet → lesson 1 to "Lesson complete" → settings from title → Graphics: Auto is the default, Low then Ultra then High apply (`data-gfx-preset` on body and canvas), a Bloom override applies, the frame-rate readout toggles, no control spills past the viewport, preset and override survive a reload, and choosing a preset clears the override. Any console error, console warning or page error fails the pass.
 
@@ -255,13 +262,12 @@ QA bar (checkable): every mode card and dialog control is reachable by mouse, to
 
 ## 16. Known limitations
 
-- No localization beyond the Graphics settings strings: English only, strings inline (see §10).
+- No localization beyond the Graphics settings and StarHermit account strings: English only, strings inline (see §10).
 - The canvas is created with antialiasing on, so Anti-aliasing "Off" only removes post-process AA; the canvas's own MSAA stays.
 - The "Always show button board" setting toggles a `mirror-emphasis` body class that has no stylesheet rule; the button board is always visible regardless.
 - `hover`, `select` and `turn` cues are defined and have clips but `main.js` never plays them.
-- The Scores screen lists only the local board; the client never reads `GET /api/v1/scores`, so server-verified ranks are not displayed.
-- Without the server, the daily date comes from the device clock.
-- Hosted play supports one human vs one server AI only; the server accepts a `timeLimitSec` the client never sends or enforces, and the rejoin form always labels the rival "Rival" at medium regardless of the level originally chosen (state, scores and moves are still exact).
+- The Scores screen lists the local board (plus the platform board when signed in); scores are never server-verified.
+- Standalone, the daily date comes from the device clock.
 - Edge buttons on the button board are 16 px thick (22 px on coarse pointers) by a 30 px cell track, under the 44 px guideline; the 3D hit strips and keyboard path are the larger targets.
 - `tests/e2e.mjs` hard-codes `/usr/bin/google-chrome`.
 - The `voice` bus and `STREAM_AV` seeded audio variants are wired but unused.
@@ -271,8 +277,7 @@ QA bar (checkable): every mode card and dialog control is reachable by mouse, to
 - Localized string tables and a language selector for en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR, it-IT, chosen from `navigator.languages` with a settings override.
 - Play `hover` on pointer-over of a free edge (throttled), `select` on mode-card confirmation and `turn` when the pencil passes to the human.
 - A stylesheet rule for `mirror-emphasis` that enlarges the button board and shrinks the scene.
-- Fetch and show the own-server verified board per journey/challenge/daily id (`GET /api/v1/scores?board=`) on the Scores screen alongside the local one (the platform leaderboard read is wired; the own-server board read is not).
-- Hosted play against another person via platform sessions, with presence and invitations.
+- Play against another person via platform sessions, with presence and invitations.
 
 ## Browser interference
 
