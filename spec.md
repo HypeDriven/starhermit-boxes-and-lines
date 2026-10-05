@@ -140,6 +140,8 @@ Input locking: `onPick` ignores input unless a session is active, unpaused and i
 
 Layout: `#app-shell` is a column grid: `#topbar` (objective block, status block with turn indicator / score chips / clock, actions block with Hint · Undo · Skip · Pause) above `#play-region`, which stacks `#scene-host` (3D canvas, `role=application`) over `#board-mirror` (the button board). Padding on the shell and overlays adds the four `env(safe-area-inset-*)` values.
 
+- **Large screens (above 1600×1000).** `ui-scale.js` sets `--ui-scale` (min(w/1600, h/1000), max 2.5); `#app-shell` (HUD, 3D scene, button board), the overlays, toast, captions and frame-rate meter zoom by it, viewport-unit lengths inside them are divided by it, and the WebGL pixel ratio is multiplied by it so the scene stays crisp. At 1600×1000 and below the scale is exactly 1.
+
 - **Desktop (≥ 1024 px).** Three HUD blocks in one row; the panel is `min(680px, 92vw)` wide, `max-height 88dvh`, scrollable inside.
 - **Compact (< 1024 px).** Objective spans the top row; status and actions share the second.
 - **Portrait phone (≤ 700 px).** Status stacks above objective; HUD buttons grow to 48 px and share the row; the board mirror keeps a 12 px dot grid with edge buttons `minmax(30px, 1fr)`; the onboarding toast sits above the action tray.

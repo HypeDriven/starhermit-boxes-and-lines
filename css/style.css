@@ -89,6 +89,12 @@ button { font-family: inherit; font-size: inherit; }
 
 /* ---------- App shell layout ---------- */
 
+/* Large screens: the shell (HUD + 3D board + button board), overlays, toast,
+   captions and fps meter zoom by --ui-scale (ui-scale.js; exactly 1 up to
+   1600x1000). vw/vh inside them are divided by it; the canvas backing store
+   multiplies its pixel ratio by UIScale.value. Phone-only breakpoints always run at 1. */
+#app-shell, #screen-overlay, #pause-overlay, #toast, #captions, #fps-meter { zoom: var(--ui-scale, 1); }
+
 #game-root {
   min-height: 100vh;
   min-height: 100dvh;
@@ -97,8 +103,8 @@ button { font-family: inherit; font-size: inherit; }
 #app-shell {
   display: grid;
   grid-template-rows: auto 1fr;
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh / var(--ui-scale, 1));
+  height: calc(100dvh / var(--ui-scale, 1));
   gap: 10px;
   padding: 10px calc(10px + var(--safe-r)) calc(10px + var(--safe-b)) calc(10px + var(--safe-l));
 }
@@ -392,9 +398,9 @@ button { font-family: inherit; font-size: inherit; }
   border: 1px solid var(--paper-edge);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lift);
-  width: min(680px, 92vw);
-  max-height: 88vh;
-  max-height: 88dvh;
+  width: min(680px, calc(92vw / var(--ui-scale, 1)));
+  max-height: calc(88vh / var(--ui-scale, 1));
+  max-height: calc(88dvh / var(--ui-scale, 1));
   overflow-y: auto;
   padding: 22px 26px;
 }
@@ -402,7 +408,7 @@ button { font-family: inherit; font-size: inherit; }
 #screen-panel .dim, #pause-panel .dim { color: var(--ink-soft); }
 
 #pause-panel {
-  width: min(380px, 92vw);
+  width: min(380px, calc(92vw / var(--ui-scale, 1)));
   text-align: center;
 }
 #pause-panel .btn-col { margin-top: 16px; }
@@ -719,7 +725,7 @@ button { font-family: inherit; font-size: inherit; }
   bottom: calc(24px + var(--safe-b));
   transform: translateX(-50%) translateY(12px);
   z-index: 80;
-  max-width: min(480px, 90vw);
+  max-width: min(480px, calc(90vw / var(--ui-scale, 1)));
   padding: 10px 20px;
   border-radius: 999px;
   background: rgba(26, 19, 11, 0.92);
@@ -740,7 +746,7 @@ button { font-family: inherit; font-size: inherit; }
   left: calc(16px + var(--safe-l));
   bottom: calc(16px + var(--safe-b));
   z-index: 70;
-  max-width: 60vw;
+  max-width: calc(60vw / var(--ui-scale, 1));
   padding: 6px 12px;
   border-radius: 999px;
   background: rgba(26, 19, 11, 0.85);
@@ -895,7 +901,7 @@ body.left-handed #captions {
 .gfx-section .setting-row > span { flex: 1 1 10em; min-width: 0; }
 .gfx-section select { max-width: 100%; min-width: 0; flex: 0 1 auto; }
 .gfx-scale { display: inline-flex; align-items: center; gap: 10px; }
-.gfx-scale input[type="range"] { min-width: 120px; width: min(220px, 45vw); }
+.gfx-scale input[type="range"] { min-width: 120px; width: min(220px, calc(45vw / var(--ui-scale, 1))); }
 .gfx-scale output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 .gfx-summary { margin: 10px 0 4px; font-size: 0.9rem; overflow-wrap: anywhere; }
 .gfx-note {

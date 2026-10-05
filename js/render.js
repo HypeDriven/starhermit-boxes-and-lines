@@ -1388,7 +1388,7 @@ export function createRenderer(host, opts) {
   }
   function applySize() {
     var w = host.clientWidth || 1, h = host.clientHeight || 1;
-    var ratio = Math.min(window.devicePixelRatio || 1, 2) * q.scale * adaptiveScale;
+    var ratio = Math.min(window.devicePixelRatio || 1, 2) * ((window.UIScale && UIScale.value) || 1) * q.scale * adaptiveScale;
     if (w === size[0] && h === size[1] && ratio === pixelRatio) return;
     size = [w, h];
     pixelRatio = ratio;
