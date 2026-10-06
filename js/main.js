@@ -399,7 +399,10 @@ import { accountStrings } from './gfx-strings.js';
     Audio.play('page');
     $('screen-back').hidden = (name === 'title' && !inPlay());
     $('screen-panel').setAttribute('tabindex', '-1');
-    $('screen-panel').focus();
+    $('screen-panel').focus({ preventScroll: true });
+    // The panel is reused for every screen: a new screen opens at its top,
+    // not at the scroll position the previous one (e.g. the title menu) left.
+    $('screen-panel').scrollTop = 0;
     syncInert();
   }
 
@@ -871,7 +874,7 @@ import { accountStrings } from './gfx-strings.js';
     stopTick();
     $('pause-overlay').hidden = false;
     syncInert();
-    $('btn-resume').focus();
+    $('btn-resume').focus({ preventScroll: true });
     Audio.play('pause');
     announce('Paused');
   }
