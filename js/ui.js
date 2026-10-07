@@ -229,6 +229,7 @@
       });
       host.appendChild(ul);
     }
+    if (r.lb) host.appendChild(el('p', { id: 'results-lb', class: 'dim', 'aria-live': 'polite', text: r.lb }));
     var row = el('div', { class: 'btn-row' });
     var retry = el('button', { class: 'btn primary', text: '↻ Retry' });
     retry.addEventListener('click', ctx.onRetry);

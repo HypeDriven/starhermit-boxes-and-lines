@@ -133,8 +133,22 @@
     return SH.loadBindings(defaults).catch(function () { return JSON.parse(JSON.stringify(defaults)); });
   }
 
+  // Post a finished ranked sheet to the leaderboards (score-script.js);
+  // resolves { posted, rank } — rank on the high-score board, or null.
+  function submitScore(total) {
+    if (!hosted() || typeof SH.submitScores !== 'function') return Promise.resolve({ posted: false, rank: null });
+    return SH.submitScores({ 'high-score': total }).then(function (keys) {
+      if (!keys || keys.indexOf('high-score') < 0) return { posted: false, rank: null };
+      return SH.leaderboard('high-score', { pageSize: 100 }).then(function (r) {
+        var me = ((r && r.items) || []).filter(function (i) { return i.userId === SH.userId; })[0];
+        return { posted: true, rank: me ? me.rank : null };
+      }, function () { return { posted: true, rank: null }; });
+    }, function () { return { posted: false, rank: null }; });
+  }
+
   return {
     init: init,
+    submitScore: submitScore,
     onLocalSave: onLocalSave,
     flushCloud: flushCloud,
     canSignIn: canSignIn,

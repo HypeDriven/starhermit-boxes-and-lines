@@ -13,7 +13,7 @@
 | Session length | 2×3 lesson sheets ≈ 1 min; 4×4 ≈ 3–5 min; 7×7 journey finale ≈ 10 min |
 | Platforms | Desktop and mobile browsers (portrait and landscape); WebGL optional |
 | Rendering | Three.js r160 (vendored) scene of desk, paper, dots, edges and folding boxes, with a semantic HTML "button board" mirror that is always on screen and fully playable on its own |
-| Networking | None standalone (no `/api` or `/ws` request without a launch token); signed in, only `GET /api/v1/time` for clock sync. `server.js` is a static host whose session/score routes the client no longer calls |
+| Networking | None standalone (no `/api` or `/ws` request without a launch token); signed in, `GET /api/v1/time` for clock sync plus the cloud save, settings and the leaderboard post after a ranked sheet (see §12). `server.js` is a static host whose session/score routes the client no longer calls |
 
 File map (everything that ships or tests the game):
 
@@ -33,7 +33,8 @@ File map (everything that ships or tests the game):
 | `js/gfx.js` | Pure graphics quality model: presets, categories and tiers, `detectPreset`, `resolve`, `presetTier`, `choosePreset`, `describe` |
 | `js/gfx-panel.js` | Graphics section of the Settings screen (controls `#gfx-preset`, `#gfx-scale`, `#gfx-<category>`, `#gfx-adaptive`, `#gfx-fps`, `#gfx-summary`, `#gfx-note`) |
 | `js/gfx-strings.js` | Graphics-section strings for en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR, it-IT |
-| `server.js` | StarHermit game script + static host: `/api/v1/time` (the only route the client calls, signed in only), server-side sessions, authoritative score replay, per-board leaderboards |
+| `score-script.js` | StarHermit platform script (`server=`): range-checks a finished ranked sheet's total sent through `StarHermit.submitScores` and posts it to the `high-score` leaderboard (canonical copy in the games repo's `tools/score-script.js`) |
+| `server.js` | Local dev server + static host: `/api/v1/time` (the only route the client calls, signed in only), server-side sessions, authoritative score replay, per-board leaderboards |
 | `vendor/three.module.min.js` | Three.js r160 |
 | `vendor/three/addons/` | r160 addons (three@0.160.1): EffectComposer, RenderPass, ShaderPass, OutputPass, GTAOPass, UnrealBloomPass, SMAAPass and their shaders, FXAAShader, RoomEnvironment |
 | `sfx/` | 20 Opus clips, `manifest.txt` (canonical binding table), `manifest.json` (generator entries), `manifest.md` (generator report) |
@@ -213,24 +214,25 @@ The game currently ships **en-US only**, except the Settings screen's Graphics c
 
 ## 12. StarHermit integration
 
-`starhermit.txt` declares `name=Boxes & Lines`, `launch=index.html`, `owner=<uuid>`, `server=server.js`, `cover=coverart.png`, following the manifest conventions at https://wiki.starhermit.com/.
+`starhermit.txt` declares `name=Boxes & Lines`, `launch=index.html`, `owner=<uuid>`, `server=score-script.js`, `cover=coverart.png`, following the manifest conventions at https://wiki.starhermit.com/.
 
 Used:
-- **Server script** (`server.js`, zero dependencies, `PORT` env or `--port`): serves the static files (refusing dotfiles, non-whitelisted types, and anything under `tests/`, `tools/` or `node_modules/`), and exposes `/api/v1/time` (clock sync used for the daily date and countdown — the only route the client calls, and only when signed in). Kept for the server tests but not called by the client: `/api/v1/sessions` (+ `/:id`, `/:id/moves`, `/:id/resign`) and `/api/v1/scores` (POST re-creates the game from `cfg`, replays every command, re-derives AI moves from the seed, and rejects `impossible-score` / `stale-version`; GET returns a board's top 50). Per-IP rate limit 120 requests/min; sessions expire after 2 h idle; boards keep 500 entries.
+- **Platform script** (`score-script.js`): the platform runs it for the practice session `StarHermit.submitScores` opens; it accepts one `high-score` value (integer, 0–100,000) and posts it to that board.
+- **Local dev server** (`server.js`, zero dependencies, `PORT` env or `--port`): serves the static files (refusing dotfiles, non-whitelisted types, and anything under `tests/`, `tools/` or `node_modules/`), and exposes `/api/v1/time` (clock sync used for the daily date and countdown — the only route the client calls, and only when signed in). Kept for the server tests but not called by the client: `/api/v1/sessions` (+ `/:id`, `/:id/moves`, `/:id/resign`) and `/api/v1/scores` (POST re-creates the game from `cfg`, replays every command, re-derives AI moves from the seed, and rejects `impossible-score` / `stale-version`; GET returns a board's top 50). Per-IP rate limit 120 requests/min; sessions expire after 2 h idle; boards keep 500 entries.
 - **Leaderboards:** every ranked, unassisted finish is stored on the device (carrying the account id when a launch token is present); nothing is submitted to an own-server route. When launched with a token, the Scores screen also reads the platform leaderboard via `GET /api/v1/games/{slug}` → `leaderboardId` → `GET /api/v1/leaderboards/{id}/entries`, resolving user ids to profile nicknames (own row marked "You"); without a token it shows local bests only.
 
 StarHermit platform (through `starhermit-sdk.js`, a verbatim copy of the canonical client, and `js/platform.js` = `window.BLPlatform`, both loaded before every other script; the adapter calls `StarHermit.init()` as it loads; without a token no StarHermit request is made):
 - **Launch token and renewal:** the SDK reads `#game_token=<jwt>[&session_id=]` or a sign-in return `#access_token=…`, strips it, takes the slug from `game_scope` (never hard-coded) and renews via `POST /api/v1/games/{slug}/launch-token`; the current token also rides as `Authorization: Bearer` on `GET /api/v1/time`. If renewal is refused the title account line reads "Signed out of StarHermit — progress stays on this device." and play continues locally.
 - **Sign-in:** on `*.starhermit.com` without a token the title shows **Sign in with StarHermit** (`StarHermit.signIn()`); hidden when signed in and locally.
 - **Identity:** the title account line shows "Playing as <nickname> · <sync status>"; the nickname (`GET /api/v1/users/{id}/profile`, never `/api/v1/me`; `Player <id8>` fallback, no request when signed out) replaces the free-text local name on the profile screen and on score posts, which also carry the account id.
-- **Platform leaderboard:** the Scores screen adds a Platform tab read through the SDK (first board of `GET /api/v1/games/{slug}/leaderboards` → entries), rows resolved to nicknames and the own row marked "You". Clients never submit to it.
+- **Platform leaderboard:** when signed in, every finished ranked, unassisted sheet (journey, challenge, daily; not practice or lessons) posts its score-breakdown total through `StarHermit.submitScores({ 'high-score': total })` to the `high-score` board (integer, higher is better, 0–100,000). The results dialog shows "Posting score to the leaderboard…", then "Leaderboard rank: #N" (or "Score posted to the leaderboard." / "Score not posted to the leaderboard."). The Scores screen adds a Platform tab read through the SDK (first board of `GET /api/v1/games/{slug}/leaderboards` → entries), rows resolved to nicknames and the own row marked "You". Standalone play posts nothing and shows no line.
 - **Cloud save:** the whole save document (settings + progress, the checksummed `boxesandlines.save.v1` wrapper) mirrors to `/api/v1/me/cloud-saves/game:{slug}`. On start the remote copy wins; localStorage stays the offline cache; every save queues a debounced (2 s) upload, flushed on `pagehide`/hidden.
 - **Settings KV:** every save sends the changed `settings` keys with `PATCH /api/v1/games/{slug}/settings`; on start the platform's values override the save document's.
 - **Invite:** when signed in the title shows **Invite a friend**, which copies `StarHermit.inviteLink()` and confirms with a toast (the link is shown if the clipboard is blocked).
 - **Controls:** `starhermit.txt` declares 12 `control.*` actions (`left`, `right`, `up`, `down`, `first`, `last`, `draw`, `undo`, `hint`, `pause`, `skip`, `camera`); keydown routes by `event.code` through `StarHermit.loadBindings` (defaults standalone) and Help → Controls lists the effective keys. Escape still closes dialogs.
-- **Strings:** sign-in, invite, toast and account-line texts exist in all nine locales (`ACCOUNT_STRINGS` in `js/gfx-strings.js`).
+- **Strings:** sign-in, invite, toast, account-line and leaderboard-result texts exist in all nine locales (`ACCOUNT_STRINGS` in `js/gfx-strings.js`).
 
-Not used: presence, platform-side achievements (achievements are local; `server.js` is an HTTP host, not a platform script reporting `achievements`), platform sessions/matchmaking/session invites/chat/replays, the `server.js` session and score routes, avatars (no player chip).
+Not used: presence, platform-side achievements (achievements are local; `score-script.js` reports only scores), platform matchmaking/session invites/chat/replays, the `server.js` session and score routes, avatars (no player chip).
 
 ## 13. Technical architecture
 

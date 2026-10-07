@@ -1193,6 +1193,7 @@ import { accountStrings } from './gfx-strings.js';
     if (stt.boxesClaimed >= 500) unlock('boxes-500');
 
     // ---- ranked leaderboard
+    var postLb = !!(curCfg.ranked && !sess.assists && P.hosted);
     if (curCfg.ranked && !sess.assists) {
       var sid = randomHex(8);
       var entry = {
@@ -1229,9 +1230,22 @@ import { accountStrings } from './gfx-strings.js';
       breakdown: breakdown,
       stars: curCfg.kind === 'journey' ? (stars || p.journeyStars[curCfg.id] || 0) : null,
       newAchievements: newAchievements,
-      canNext: !!(nextStage && won)
+      canNext: !!(nextStage && won),
+      lb: postLb ? ACCOUNT.lbPosting : null
     });
     appState = 'progression';
+    if (postLb) postToLeaderboard(breakdown.total);
+  }
+
+  // Signed in only: post a finished ranked sheet's total to the platform
+  // high-score board and show the player's rank on the results dialog.
+  function postToLeaderboard(total) {
+    P.submitScore(total).then(function (r) {
+      var line = $('results-lb');
+      if (!line) return;
+      line.textContent = !r.posted ? ACCOUNT.lbNotPosted
+        : r.rank ? ACCOUNT.lbRank.replace('{rank}', r.rank) : ACCOUNT.lbPosted;
+    });
   }
 
   function randomHex(n) {
