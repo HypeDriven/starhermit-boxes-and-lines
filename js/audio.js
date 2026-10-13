@@ -27,7 +27,7 @@
       var g = ctx.createGain();
       g.gain.value = settings.muted ? 0 : (settings[name] != null ? settings[name] : 0.8);
       g.connect(master);
-      buses[name] = g;
+      buses[name] = (globalThis.GameOptions ? globalThis.GameOptions.tagBus(g, name) : g);
     });
     return true;
   }
@@ -48,7 +48,7 @@
   // ---------- primitive builders ----------
   function blip(freq, dur, type, gain, bus, when, sweepTo) {
     var t = (when || ctx.currentTime);
-    var o = ctx.createOscillator(), g = ctx.createGain();
+    var o = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(ctx.createOscillator(), bus) : ctx.createOscillator()), g = ctx.createGain();
     o.type = type || 'sine';
     o.frequency.setValueAtTime(freq, t);
     if (sweepTo) o.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
@@ -65,7 +65,7 @@
     var buf = ctx.createBuffer(1, len, ctx.sampleRate);
     var d = buf.getChannelData(0);
     for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-    var src = ctx.createBufferSource();
+    var src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(ctx.createBufferSource(), bus) : ctx.createBufferSource());
     src.buffer = buf;
     var f = ctx.createBiquadFilter();
     f.type = 'bandpass'; f.frequency.value = cutoff; f.Q.value = q || 0.9;
@@ -171,7 +171,7 @@
   }
 
   function playSample(name) {
-    var src = ctx.createBufferSource();
+    var src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(ctx.createBufferSource(), name) : ctx.createBufferSource());
     src.buffer = sampleBufs[name];
     src.connect(buses.effects);
     src.start();
@@ -205,7 +205,7 @@
       last = (last + 0.02 * w) / 1.02;
       d[i] = last * 3.5;
     }
-    var src = ctx.createBufferSource();
+    var src = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(ctx.createBufferSource(), null) : ctx.createBufferSource());
     src.buffer = buf; src.loop = true;
     var f = ctx.createBiquadFilter();
     f.type = 'lowpass'; f.frequency.value = 320;
@@ -227,7 +227,7 @@
     var dur = 3.2;
     [1, 1.5, 2].forEach(function (mult, i) {
       var t = ctx.currentTime + i * 0.04;
-      var o = ctx.createOscillator(), g = ctx.createGain();
+      var o = (globalThis.GameOptions ? globalThis.GameOptions.trackSource(ctx.createOscillator(), null) : ctx.createOscillator()), g = ctx.createGain();
       o.type = 'sine';
       o.frequency.value = chordRoot * mult * (1 + (rng.next() - 0.5) * 0.004);
       g.gain.setValueAtTime(0, t);

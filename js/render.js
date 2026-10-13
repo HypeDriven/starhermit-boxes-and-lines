@@ -1425,11 +1425,11 @@ export function createRenderer(host, opts) {
     var k = postKeyFor(size[0], size[1]);
     if (k !== postKey) { postKey = k; buildPost(size[0], size[1]); }
     if (composer) {
-      try { composer.render(dt); return; } catch (e) {
+      try { (globalThis.GameOptions ? globalThis.GameOptions.draw(composer.renderer, () => composer.render(dt)) : composer.render(dt)); return; } catch (e) {
         postFailed = true; disposeComposer(); postKey = 'none'; onGraphics();
       }
     }
-    renderer.render(scene, camera);
+    (globalThis.GameOptions ? globalThis.GameOptions.draw(renderer, () => renderer.render(scene, camera)) : renderer.render(scene, camera));
   }
   function startLoop() {
     if (running) return;
