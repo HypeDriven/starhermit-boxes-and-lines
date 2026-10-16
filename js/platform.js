@@ -23,7 +23,7 @@
   var pendingSave = null;      // wrapped save string awaiting load completion
   var pushedSettings = null;   // last settings object mirrored to the KV store
   var platformSettings = null; // settings read from the KV store at start
-  var listeners = { profile: [], sync: [], auth: [] };
+  var listeners = { profile: [], sync: [], auth: [], conflict: [] };
 
   function hosted() { return !!(SH && SH.signedIn); }
   function notify(kind, value) {
@@ -79,9 +79,21 @@
     if (typeof opts.onProfile === 'function') listeners.profile.push(opts.onProfile);
     if (typeof opts.onSync === 'function') listeners.sync.push(opts.onSync);
     if (typeof opts.onAuth === 'function') listeners.auth.push(opts.onAuth);
+    if (typeof opts.onConflict === 'function') listeners.conflict.push(opts.onConflict);
     if (!SH) return Promise.resolve(null);
 
     SH.on('saved', function (ok) { if (hosted()) setSync(ok ? 'synced' : 'offline'); });
+    // Another device saved first: the SDK refuses the write and blocks further
+    // writes until a reload. Reload, hand the newer cloud copy to the game to
+    // merge (opts.onConflict(wrappedRemote)); its next save carries both sides.
+    SH.on('saveconflict', function () {
+      setSync('saving');
+      SH.loadJSON().then(function (remote) {
+        if (SH.saveConflicted()) { setSync('offline'); return; }
+        notify('conflict', remote && typeof remote.payload === 'string' ? JSON.stringify(remote) : null);
+      });
+    });
+
     SH.on('auth', function (a) {
       if (!a.signedIn) { profile = null; setSync('offline'); }
       notify('auth', a);
@@ -117,8 +129,9 @@
   // ---------- identity for board rows ----------
   /** Nickname for any user id (cached by the SDK); "Player <id8>" signed out. */
   function profileFor(uid) {
-    if (!uid || typeof uid !== 'string') return Promise.resolve('player');
-    var fallback = 'Player ' + uid.slice(0, 8);
+    var T = root.BLT || function (k, v) { return k.replace('{id}', v ? v.id : ''); };
+    if (!uid || typeof uid !== 'string') return Promise.resolve(T('player'));
+    var fallback = T('Player {id}', { id: uid.slice(0, 8) });
     if (!hosted()) return Promise.resolve(fallback);
     return SH.profile(uid).then(function (p) { return p && p.nickname || fallback; }, function () { return fallback; });
   }

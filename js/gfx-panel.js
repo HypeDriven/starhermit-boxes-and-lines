@@ -22,7 +22,9 @@ function h(tag, attrs, kids) {
  *        info(): renderer.graphicsInfo() or null when 3D is unavailable }
  */
 export function buildGraphicsPanel(host, api) {
-  var S = gfxStrings(navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]);
+  // api.strings() returns the table for the game language (js/i18n.js).
+  var S = api.strings ? api.strings() : gfxStrings(navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]);
+
   var info = api.info();
   var detected = info ? info.detected : detectPreset('');
   var tierName = function (t) { return S.tier[t] || t; };

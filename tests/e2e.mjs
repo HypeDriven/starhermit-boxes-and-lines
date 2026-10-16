@@ -22,12 +22,15 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { stubStarHermit, launchToken } from './starhermit-e2e.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHOT = (stage, tag) => `/tmp/boxes-and-lines-e2e-${stage}-${tag}.png`;
 
 // Benign headless-GPU noise (from tools/production_game_audit.mjs).
 const browserNoise = /GL Driver Message|GPU stall due to ReadPixels|Automatic fallback to software WebGL|EnableWebGLDeveloperExtensions/i;
+// True only while the signed-in step serves a stubbed StarHermit API.
+let allowApi = false;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript',
@@ -360,6 +363,66 @@ async function playthrough(page, tag, errors) {
     await page.waitForFunction(() => document.getElementById('screen-title').textContent === 'Boxes & Lines');
   });
 
+  await step('Language: Automatic follows the StarHermit preferred language; Settings switch re-renders mid-sheet and syncs ui.language; report a problem', async () => {
+    const calls = await stubStarHermit(page, { preferredLanguage: 'fr-CA' });
+    allowApi = true;
+    await page.goto('about:blank');
+    await page.goto(base + 'index.html#game_token=' + launchToken(), { waitUntil: 'load' });
+    await page.waitForFunction(() => document.documentElement.lang === 'fr-CA');
+    await page.waitForFunction(() => /Jouer/.test(document.querySelector('.card.primary-card')?.textContent || ''));
+    // Start a sheet, draw a line, then change the language from Settings during play.
+    await page.locator('.card.primary-card').click();
+    await page.waitForFunction(() => document.getElementById('screen-overlay').hidden);
+    await page.waitForFunction(() => document.getElementById('turn-indicator').textContent.trim() === 'À vous');
+    await drawFirstFreeEdge(page);
+    await page.waitForFunction(() => document.getElementById('turn-indicator').textContent.trim() === 'À vous', null, { timeout: 20000 });
+    const drawn = await drawnCount(page);
+    await page.click('#btn-pause');
+    await page.waitForFunction(() => document.getElementById('pause-title').textContent === 'En pause');
+    await page.click('#btn-pause-settings');
+    await page.waitForFunction(() => document.getElementById('screen-title').textContent === 'Paramètres');
+    const choice = page.locator('[data-game-language="choice"]');
+    await choice.scrollIntoViewIfNeeded();
+    const auto = await choice.locator('option').first().textContent();
+    if (auto !== 'Automatique — Français (Canada)') throw new Error('Automatic label not resolved: ' + auto);
+    await choice.selectOption('it-IT');
+    await page.waitForFunction(() => document.documentElement.lang === 'it-IT');
+    await page.waitForFunction(() => document.getElementById('screen-title').textContent === 'Impostazioni');
+    await page.waitForFunction(() => /Salvato/.test(document.querySelector('[data-game-language="status"]')?.textContent || ''));
+    if (calls.settings['ui.language']?.choice !== 'it-IT') throw new Error('ui.language not saved: ' + JSON.stringify(calls.settings));
+    if (await page.locator('[data-game-language="choice"]').count() !== 1) throw new Error('expected exactly one language selector');
+    const report = page.locator('[data-game-report="title"]');
+    await report.scrollIntoViewIfNeeded();
+    await report.fill('Test report');
+    await page.click('[data-game-report="send"]');
+    await page.waitForFunction(() => /Grazie/.test(document.querySelector('[data-game-report="status"]').textContent));
+    if (!calls.reports?.[0] || calls.reports[0].kind !== 'bug') throw new Error('report not posted');
+    const spill = await page.evaluate(() => {
+      const w = document.documentElement.clientWidth;
+      return [...document.querySelectorAll('#screen-body select, #screen-body input, #screen-body button, #screen-body textarea')]
+        .filter((n) => n.offsetParent && n.getBoundingClientRect().right > w + 1).map((n) => n.outerHTML.slice(0, 60));
+    });
+    if (spill.length) throw new Error('settings controls cut off: ' + spill.join(','));
+    await page.screenshot({ path: SHOT('language', tag) });
+    await page.click('#screen-back');
+    await page.waitForFunction(() => document.getElementById('pause-title').textContent === 'In pausa' &&
+      document.getElementById('btn-resume').textContent === 'Riprendi');
+    await page.click('#btn-resume');
+    await page.waitForFunction(() => document.getElementById('turn-indicator').textContent.trim() === 'Tocca a te');
+    if ((await drawnCount(page)) !== drawn) throw new Error('the sheet in play changed during the language switch');
+    if (await page.locator('#btn-hint').textContent() !== 'Suggerimento') throw new Error('HUD not re-rendered');
+    await page.click('#btn-pause');
+    await page.click('#btn-pause-settings');
+    await choice.scrollIntoViewIfNeeded();
+    await choice.selectOption('auto');
+    await page.waitForFunction(() => document.documentElement.lang === 'fr-CA');
+    await page.keyboard.press('Escape');
+    await page.click('#btn-leave');
+    await page.waitForFunction(() => document.getElementById('screen-title').textContent === 'Boxes & Lines');
+    await page.unroute(/\/api\/v1\//);
+    allowApi = false;
+  });
+
   const bad = errors.filter((e) => !browserNoise.test(e));
   if (bad.length) throw new Error('page errors during pass:\n' + bad.join('\n'));
 }
@@ -390,7 +453,8 @@ try {
     });
     page.on('request', (r) => {
       const u = new URL(r.url());
-      if (u.origin === new URL(base).origin && /^\/(api|ws)(\/|$)/.test(u.pathname)) {
+      if (!allowApi && u.origin === new URL(base).origin && /^\/(api|ws)(\/|$)/.test(u.pathname)) {
+
         errors.push(`own-server request while standalone: ${u.pathname}`);
       }
     });

@@ -7,7 +7,7 @@
 import { createRenderer, webglAvailable } from './render.js';
 import { resolve as resolveGfx, detectPreset } from './gfx.js';
 import { buildGraphicsPanel } from './gfx-panel.js';
-import { accountStrings } from './gfx-strings.js';
+import { accountStrings, gfxStrings } from './gfx-strings.js';
 
 (function () {
   'use strict';
@@ -15,7 +15,10 @@ import { accountStrings } from './gfx-strings.js';
   var Rules = window.BLRules, Content = window.BLContent, Session = window.BLSession,
       Store = window.BLStore, Audio = window.BLAudio, UI = window.BLUI;
   var P = window.BLPlatform; // StarHermit adapter (js/platform.js over starhermit-sdk.js)
-  var ACCOUNT = accountStrings(navigator.languages || [navigator.language]);
+  var I18N = window.BLI18N;
+  var T = UI.T;
+  // Account and Graphics strings follow the one game language (js/i18n.js).
+  var ACCOUNT = accountStrings([I18N.lang]);
 
   // ---------------------------------------------------------------- helpers
 
@@ -41,10 +44,13 @@ import { accountStrings } from './gfx-strings.js';
     captionTimer = setTimeout(function () { captionsEl.classList.remove('show'); }, 1500);
   }
 
+  // text may be a function so a visible toast follows a language change.
+  var toastText = null;
   function showToast(text, actionLabel, actionFn) {
     if (!toastEl) return;
+    toastText = text;
     toastEl.innerHTML = '';
-    toastEl.appendChild(document.createTextNode(text));
+    toastEl.appendChild(document.createTextNode(typeof text === 'function' ? text() : text));
     if (actionLabel && actionFn) {
       var b = el('button', { class: 'btn ghost', text: actionLabel });
       b.addEventListener('click', function () { hideToast(); actionFn(); });
@@ -63,7 +69,7 @@ import { accountStrings } from './gfx-strings.js';
   INVALID_TEXT[Rules.INVALID.BAD_CMD] = 'Unknown action.';
   INVALID_TEXT[Rules.INVALID.BAD_SHAPE] = 'Malformed action.';
   INVALID_TEXT[Rules.INVALID.WRONG_PLAYER] = 'Not your turn.';
-  function invalidText(reason) { return INVALID_TEXT[reason] || 'That move is not allowed.'; }
+  function invalidText(reason) { return T(INVALID_TEXT[reason] || 'That move is not allowed.'); }
 
   // ---------------------------------------------------------------- save doc
 
@@ -103,6 +109,7 @@ import { accountStrings } from './gfx-strings.js';
   }
   function buildGraphics(host) {
     gfxPanel = buildGraphicsPanel(host, {
+      strings: function () { return gfxStrings([I18N.lang]); },
       get: function () { return doc.settings.graphics || {}; },
       save: function (next) {
         doc.settings.graphics = next;
@@ -136,7 +143,7 @@ import { accountStrings } from './gfx-strings.js';
   // Score rows and the profile screen show the account nickname when hosted;
   // the free-text local name is the offline fallback only.
   function displayName() {
-    return profileName() || (doc.profileName || 'Guest');
+    return profileName() || (doc.profileName || T('Guest'));
   }
   function accountLine() {
     if (!P.hosted) return signedOutNotice ? ACCOUNT.signedOut : ACCOUNT.offline;
@@ -172,9 +179,10 @@ import { accountStrings } from './gfx-strings.js';
     return (keyBindings[action] || []).map(function (c) { return names[c] || c.replace(/^Key/, '').replace(/^Digit/, ''); }).join('/');
   }
   function keysText() {
-    return keyName('left') + ' ' + keyName('right') + ' ' + keyName('up') + ' ' + keyName('down') + ' move the focus, ' +
-      keyName('draw') + ' draws, ' + keyName('undo') + ' undo (practice), ' + keyName('hint') + ' hint, ' +
-      keyName('pause') + ' pause, ' + keyName('skip') + ' skip animation, ' + keyName('camera') + ' reset camera';
+    return T('{left} {right} {up} {down} move the focus, {draw} draws, {undo} undo (practice), {hint} hint, {pause} pause, {skip} skip animation, {camera} reset camera', {
+      left: keyName('left'), right: keyName('right'), up: keyName('up'), down: keyName('down'), draw: keyName('draw'),
+      undo: keyName('undo'), hint: keyName('hint'), pause: keyName('pause'), skip: keyName('skip'), camera: keyName('camera')
+    });
   }
 
   // ---------------------------------------------------------------- server clock
@@ -202,7 +210,7 @@ import { accountStrings } from './gfx-strings.js';
     var next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
     var ms = Math.max(0, next - now.getTime());
     var h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, s = Math.floor(ms / 1000) % 60;
-    return 'resets in ' + h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    return T('resets in {time}', { time: h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') });
   }
 
   // ---------------------------------------------------------------- shell DOM
@@ -218,14 +226,14 @@ import { accountStrings } from './gfx-strings.js';
       el('div', { id: 'turn-indicator' }), el('div', { id: 'score-strip' }), el('div', { id: 'clock' })
     ]));
     topbar.appendChild(el('div', { class: 'hud-block', id: 'hud-actions' }, [
-      el('button', { id: 'btn-hint', class: 'btn', text: 'Hint' }),
-      el('button', { id: 'btn-undo', class: 'btn', text: 'Undo' }),
-      el('button', { id: 'btn-skip', class: 'btn', text: 'Skip' }),
-      el('button', { id: 'btn-pause', class: 'btn', text: 'Pause' })
+      el('button', { id: 'btn-hint', class: 'btn', 'data-t': 'Hint' }),
+      el('button', { id: 'btn-undo', class: 'btn', 'data-t': 'Undo' }),
+      el('button', { id: 'btn-skip', class: 'btn', 'data-t': 'Skip' }),
+      el('button', { id: 'btn-pause', class: 'btn', 'data-t': 'Pause' })
     ]));
     shell.appendChild(topbar);
     shell.appendChild(el('div', { id: 'play-region' }, [
-      el('div', { id: 'scene-host', role: 'application', 'aria-label': '3D board view' }),
+      el('div', { id: 'scene-host', role: 'application', 'data-t-aria': '3D board view' }),
       el('div', { id: 'board-mirror' })
     ]));
     root.appendChild(shell);
@@ -235,7 +243,7 @@ import { accountStrings } from './gfx-strings.js';
       id: 'screen-panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'screen-title'
     }, [
       el('div', { id: 'screen-head' }, [
-        el('button', { id: 'screen-back', class: 'btn ghost', text: '← Back' }),
+        el('button', { id: 'screen-back', class: 'btn ghost', 'data-t': '← Back' }),
         el('h1', { id: 'screen-title' })
       ]),
       el('div', { id: 'screen-body' })
@@ -246,21 +254,29 @@ import { accountStrings } from './gfx-strings.js';
     pause.appendChild(el('section', {
       id: 'pause-panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'pause-title'
     }, [
-      el('h1', { id: 'pause-title', text: 'Paused' }),
+      el('h1', { id: 'pause-title', 'data-t': 'Paused' }),
       el('div', { class: 'btn-col' }, [
-        el('button', { id: 'btn-resume', class: 'btn primary', text: 'Resume' }),
-        el('button', { id: 'btn-pause-settings', class: 'btn', text: 'Settings' }),
-        el('button', { id: 'btn-pause-help', class: 'btn', text: 'Help' }),
-        el('button', { id: 'btn-leave', class: 'btn ghost', text: 'Leave sheet' })
+        el('button', { id: 'btn-resume', class: 'btn primary', 'data-t': 'Resume' }),
+        el('button', { id: 'btn-pause-settings', class: 'btn', 'data-t': 'Settings' }),
+        el('button', { id: 'btn-pause-help', class: 'btn', 'data-t': 'Help' }),
+        el('button', { id: 'btn-leave', class: 'btn ghost', 'data-t': 'Leave sheet' })
       ])
     ]));
     root.appendChild(pause);
+    applyShellText();
 
     root.appendChild(el('div', { id: 'live-region', class: 'visually-hidden', 'aria-live': 'polite' }));
     root.appendChild(el('div', { id: 'captions', 'aria-hidden': 'true' }));
     root.appendChild(el('div', { id: 'toast', role: 'status' }));
 
     liveRegion = $('live-region'); captionsEl = $('captions'); toastEl = $('toast');
+  }
+
+  // Shell text built once (HUD buttons, pause dialog, back button) carries its
+  // English key in data-t / data-t-aria and is re-applied on language change.
+  function applyShellText() {
+    document.querySelectorAll('[data-t]').forEach(function (n) { n.textContent = T(n.getAttribute('data-t')); });
+    document.querySelectorAll('[data-t-aria]').forEach(function (n) { n.setAttribute('aria-label', T(n.getAttribute('data-t-aria'))); });
   }
 
   // ---------------------------------------------------------------- renderer
@@ -272,9 +288,10 @@ import { accountStrings } from './gfx-strings.js';
     if (!webglAvailable()) {
       host.innerHTML = '';
       host.appendChild(el('div', { class: 'compat-msg', role: 'note' }, [
-        el('h2', { text: '3D unavailable — playing with the button board' }),
-        el('p', { text: 'Your browser could not provide WebGL. The full game remains playable below: every edge is a button, and keyboard, gamepad, and touch all work.' })
+        el('h2', { 'data-t': '3D unavailable — playing with the button board' }),
+        el('p', { 'data-t': 'Your browser could not provide WebGL. The full game remains playable below: every edge is a button, and keyboard, gamepad, and touch all work.' })
       ]));
+      applyShellText();
       return;
     }
     try {
@@ -292,9 +309,10 @@ import { accountStrings } from './gfx-strings.js';
       track('error');
       host.innerHTML = '';
       host.appendChild(el('div', { class: 'compat-msg', role: 'note' }, [
-        el('h2', { text: '3D unavailable — playing with the button board' }),
-        el('p', { text: 'The 3D view failed to start. The button board below is fully playable.' })
+        el('h2', { 'data-t': '3D unavailable — playing with the button board' }),
+        el('p', { 'data-t': 'The 3D view failed to start. The button board below is fully playable.' })
       ]));
+      applyShellText();
     }
   }
 
@@ -333,7 +351,7 @@ import { accountStrings } from './gfx-strings.js';
     learn: 'Learn', settings: 'Settings', help: 'Help', profile: 'Profile',
     scores: 'Scores', results: 'Results'
   };
-  var currentScreen = null, lastFocus = null, scoresTab = 'Global', dailySubEl = null;
+  var currentScreen = null, currentData = null, lastFocus = null, scoresTab = 'Global', dailySubEl = null;
 
   // Scores screen: personal bests (local) always; when launched with a
   // token, the platform leaderboard is read through the documented route
@@ -361,7 +379,7 @@ import { accountStrings } from './gfx-strings.js';
           var uid = e.userId || e.playerId || '';
           return profileFor(uid).then(function (name) {
             return {
-              name: uid && uid === P.userId ? 'You (' + name + ')' : name,
+              name: uid && uid === P.userId ? T('You ({name})', { name: name }) : name,
               score: e.score != null ? e.score : e.value,
               board: 'platform',
               durationMs: e.durationMs || 0
@@ -376,21 +394,8 @@ import { accountStrings } from './gfx-strings.js';
 
   function showScreen(name, data) {
     currentScreen = name;
-    var body = $('screen-body');
-    $('screen-title').textContent = SCREEN_TITLES[name] || name;
-    dailySubEl = null;
-    switch (name) {
-      case 'title': UI.buildTitle(body, ctx); tagDailySub(body); prependArt(body, 'title'); break;
-      case 'practice': UI.buildPractice(body, ctx); break;
-      case 'journey': UI.buildJourney(body, ctx); break;
-      case 'challenge': UI.buildChallenges(body, ctx); break;
-      case 'learn': UI.buildLessonList(body, ctx); break;
-      case 'settings': UI.buildSettingsForm(body, ctx); break;
-      case 'help': UI.buildHelp(body, ctx); break;
-      case 'profile': UI.buildProfile(body, ctx); break;
-      case 'scores': renderScores(body); break;
-      case 'results': UI.buildResults(body, ctx, data); if (data && data.won) prependArt(body, 'results'); break;
-    }
+    currentData = data;
+    renderScreen(name, data);
     var ov = $('screen-overlay');
     if (ov.hidden) {
       lastFocus = document.activeElement;
@@ -405,6 +410,47 @@ import { accountStrings } from './gfx-strings.js';
     $('screen-panel').scrollTop = 0;
     syncInert();
   }
+
+  function renderScreen(name, data) {
+    var body = $('screen-body');
+    $('screen-title').textContent = name === 'title' ? SCREEN_TITLES.title : T(SCREEN_TITLES[name] || name);
+    dailySubEl = null;
+    switch (name) {
+      case 'title': UI.buildTitle(body, ctx); tagDailySub(body); prependArt(body, 'title'); break;
+      case 'practice': UI.buildPractice(body, ctx); break;
+      case 'journey': UI.buildJourney(body, ctx); break;
+      case 'challenge': UI.buildChallenges(body, ctx); break;
+      case 'learn': UI.buildLessonList(body, ctx); break;
+      case 'settings': UI.buildSettingsForm(body, ctx); break;
+      case 'help': UI.buildHelp(body, ctx); break;
+      case 'profile': UI.buildProfile(body, ctx); break;
+      case 'scores': renderScores(body); break;
+      case 'results': UI.buildResults(body, ctx, data); if (data && data.won) prependArt(body, 'results'); break;
+    }
+  }
+
+  // Language change (Settings → Language, or the account preference arriving):
+  // re-render every visible string in place — the open screen keeps its scroll
+  // position and the sheet in play, its clock and the AI are untouched.
+  function onLanguage() {
+    ACCOUNT = accountStrings([I18N.lang]);
+    applyShellText();
+    if (sess) { updateHUD(); syncMirror(); }
+    if (toastEl && toastEl.classList.contains('show') && typeof toastText === 'function' && !toastEl.querySelector('button')) {
+      toastEl.textContent = toastText();
+    }
+    if (currentScreen && overlayOpen()) {
+      var panel = $('screen-panel'), top = panel.scrollTop;
+      var langFocus = document.activeElement && document.activeElement.matches && document.activeElement.matches('[data-game-language="choice"]');
+      renderScreen(currentScreen, currentData);
+      panel.scrollTop = top;
+      if (langFocus) setTimeout(function () {
+        var sel = document.querySelector('[data-game-language="choice"]');
+        if (sel) { sel.focus({ preventScroll: true }); panel.scrollTop = top; }
+      }, 30);
+    }
+  }
+  document.addEventListener('bl-language', onLanguage);
 
   function closeScreen() {
     $('screen-overlay').hidden = true;
@@ -447,7 +493,7 @@ import { accountStrings } from './gfx-strings.js';
     var cards = body.querySelectorAll('.card');
     for (var i = 0; i < cards.length; i++) {
       var t = cards[i].querySelector('.card-title');
-      if (t && t.textContent === 'Daily Sheet') { dailySubEl = cards[i].querySelector('.card-sub'); return; }
+      if (t && t.textContent === T('Daily Sheet')) { dailySubEl = cards[i].querySelector('.card-sub'); return; }
     }
   }
 
@@ -455,7 +501,7 @@ import { accountStrings } from './gfx-strings.js';
   setInterval(function () {
     if (currentScreen === 'title' && dailySubEl && overlayOpen()) {
       var dateStr = Content.utcDateString(serverNow());
-      if (doc.progress.dailiesDone[dateStr] == null) dailySubEl.textContent = 'New shared sheet · ' + dailyCountdown();
+      if (doc.progress.dailiesDone[dateStr] == null) dailySubEl.textContent = T('New shared sheet · {countdown}', { countdown: dailyCountdown() });
     }
   }, 1000);
 
@@ -505,7 +551,7 @@ import { accountStrings } from './gfx-strings.js';
       saveDoc();
       track('settings-change');
     },
-    onName: function (n) { doc.profileName = n; saveDoc(); announce('Display name set to ' + n); },
+    onName: function (n) { doc.profileName = n; saveDoc(); announce(T('Display name set to {name}', { name: n })); },
     onRetry: function () {
       track('retry');
       closeScreen();
@@ -565,8 +611,9 @@ import { accountStrings } from './gfx-strings.js';
     appState = 'active';
     syncInert();
     updateHUD();
-    announce(curCfg.name + '. ' + objectiveText());
-    if (curCfg.intro) showToast(curCfg.intro);
+    announce(cfgName(curCfg) + '. ' + objectiveText());
+    var intro = curCfg.intro;
+    if (intro) showToast(function () { return T(intro); });
     startTick();
     scheduleAiIfNeeded();
     track('start');
@@ -589,10 +636,18 @@ import { accountStrings } from './gfx-strings.js';
     $('clock').textContent = '';
   }
 
-  function objectiveText() {
-    if (curLesson) return curLesson.text;
-    return (curCfg && (curCfg.goalText || curCfg.intro)) || 'Claim the most boxes';
+  function cfgName(cfg) {
+    if (cfg.kind === 'learn' && curLesson) return T(curLesson.title);
+    return UI.levelName(cfg);
   }
+
+  function objectiveText() {
+    if (curLesson) return T(curLesson.text);
+    if (curCfg && (curCfg.goalText || !curCfg.intro)) return UI.goalText(curCfg);
+    return curCfg && curCfg.intro ? T(curCfg.intro) : T('Claim the most boxes');
+  }
+
+  function pName(i) { return UI.playerName(sess.state.players[i]); }
 
   // ---------------------------------------------------------------- HUD
 
@@ -603,26 +658,26 @@ import { accountStrings } from './gfx-strings.js';
 
     var sub;
     if (curLesson) {
-      sub = curLesson.goal.count > 1 ? ('Progress: ' + Math.min(lessonCount, curLesson.goal.count) + ' / ' + curLesson.goal.count) : '';
+      sub = curLesson.goal.count > 1 ? T('Progress: {n} / {total}', { n: Math.min(lessonCount, curLesson.goal.count), total: curLesson.goal.count }) : '';
     } else if (Session.isHumanTurn(sess)) {
-      sub = 'Your turn — pick an edge';
+      sub = T('Your turn — pick an edge');
     } else if (!st.over) {
-      sub = st.players[st.current].name + ' is drawing…';
+      sub = T('{name} is drawing…', { name: pName(st.current) });
     } else {
       sub = '';
     }
     $('objective-sub').textContent = sub;
 
     // turn indicator + score strip
-    $('turn-indicator').textContent = st.over ? 'Sheet complete' :
-      (Session.isHumanTurn(sess) ? 'Your turn' : st.players[st.current].name + '’s turn');
+    $('turn-indicator').textContent = st.over ? T('Sheet complete') :
+      (Session.isHumanTurn(sess) ? T('Your turn') : T('{name}’s turn', { name: pName(st.current) }));
     var strip = $('score-strip');
     strip.innerHTML = '';
     st.players.forEach(function (p, i) {
       var style = Content.PLAYER_STYLES[i % Content.PLAYER_STYLES.length];
       var chip = el('span', { class: 'player-chip player-' + i + (i === st.current && !st.over ? ' active' : '') }, [
         el('span', { class: 'chip-icon', text: style.icon, 'aria-hidden': 'true' }),
-        el('span', { class: 'chip-name', text: p.name }),
+        el('span', { class: 'chip-name', text: UI.playerName(p) }),
         el('span', { class: 'chip-score', text: String(st.scores[i]) })
       ]);
       strip.appendChild(chip);
@@ -634,7 +689,7 @@ import { accountStrings } from './gfx-strings.js';
 
     if (st.current !== lastAnnouncedPlayer && !st.over) {
       lastAnnouncedPlayer = st.current;
-      announce(Session.isHumanTurn(sess) ? 'Your turn' : st.players[st.current].name + '’s turn');
+      announce(Session.isHumanTurn(sess) ? T('Your turn') : T('{name}’s turn', { name: pName(st.current) }));
     }
   }
 
@@ -775,7 +830,7 @@ import { accountStrings } from './gfx-strings.js';
         armedEdge = { dir: dir, r: r, c: c };
         var pv = Rules.previewDraw(sess.state, dir, r, c);
         rCall('setPreview', dir, r, c, pv ? (pv.claims.length ? 'claim' : pv.gives ? 'risky' : 'ok') : 'ok');
-        showToast('Tap again to confirm');
+        showToast(T('Tap again to confirm'));
       }
       return;
     }
@@ -813,8 +868,8 @@ import { accountStrings } from './gfx-strings.js';
     var kind = pv.claims.length ? 'claim' : pv.gives ? 'risky' : 'ok';
     rCall('setPreview', dir, r, c, kind);
     $('objective-sub').textContent =
-      kind === 'claim' ? 'Claims a box — draw again!' :
-      kind === 'risky' ? 'Risky: gives away a box' : 'Safe line';
+      T(kind === 'claim' ? 'Claims a box — draw again!' :
+        kind === 'risky' ? 'Risky: gives away a box' : 'Safe line');
   }
 
   // ---------------------------------------------------------------- HUD buttons
@@ -825,7 +880,7 @@ import { accountStrings } from './gfx-strings.js';
     $('btn-skip').addEventListener('click', function () {
       rCall('skipAnimations');
       Audio.play('ui');
-      announce('Animations skipped');
+      announce(T('Animations skipped'));
     });
     $('btn-pause').addEventListener('click', function () { if (sess && appState === 'active') pauseGame(); });
     $('btn-resume').addEventListener('click', resumeGame);
@@ -850,7 +905,7 @@ import { accountStrings } from './gfx-strings.js';
       rCall('setPreview', null, -1, -1, null);
       syncMirror();
       updateHUD();
-      announce('Move undone. Your turn.');
+      announce(T('Move undone. Your turn.'));
     }
   }
 
@@ -861,7 +916,7 @@ import { accountStrings } from './gfx-strings.js';
     rCall('setFocusEdge', m.dir, m.r, m.c);
     flashMirrorHint(m);
     Audio.play('hint');
-    announce('Hint: try the ' + edgeLabel(m.dir, m.r, m.c));
+    announce(T('Hint: try the {edge}', { edge: edgeLabel(m.dir, m.r, m.c) }));
   }
 
   // ---------------------------------------------------------------- pause
@@ -876,7 +931,7 @@ import { accountStrings } from './gfx-strings.js';
     syncInert();
     $('btn-resume').focus({ preventScroll: true });
     Audio.play('pause');
-    announce('Paused');
+    announce(T('Paused'));
   }
 
   function resumeGame() {
@@ -887,7 +942,7 @@ import { accountStrings } from './gfx-strings.js';
     syncInert();
     startTick();
     scheduleAiIfNeeded();
-    announce('Resumed. ' + (Session.isHumanTurn(sess) ? 'Your turn.' : ''));
+    announce(T('Resumed.') + (Session.isHumanTurn(sess) ? ' ' + T('Your turn.') : ''));
   }
 
   document.addEventListener('visibilitychange', function () {
@@ -902,7 +957,7 @@ import { accountStrings } from './gfx-strings.js';
   // ---------------------------------------------------------------- keyboard
 
   function edgeLabel(dir, r, c) {
-    return (dir === 'h' ? 'horizontal' : 'vertical') + ' edge row ' + (r + 1) + ' column ' + (c + 1);
+    return T(dir === 'h' ? 'horizontal edge row {r} column {c}' : 'vertical edge row {r} column {c}', { r: r + 1, c: c + 1 });
   }
 
   function edgePos(e) {
@@ -1013,8 +1068,8 @@ import { accountStrings } from './gfx-strings.js';
     var host = $('board-mirror');
     host.innerHTML = '';
     mirrorBtns = {}; mirrorCells = {};
-    host.appendChild(el('h2', { class: 'visually-hidden', text: 'Button board' }));
-    var grid = el('div', { class: 'mirror-grid', role: 'group', 'aria-label': 'Button board' });
+    host.appendChild(el('h2', { class: 'visually-hidden', 'data-t': 'Button board' }));
+    var grid = el('div', { class: 'mirror-grid', role: 'group', 'data-t-aria': 'Button board' });
     var tCols = [], tRows = [], i;
     var compact = window.matchMedia('(max-height: 500px) and (orientation: landscape)').matches;
     var cellTrack = compact ? 'minmax(18px, 1fr)' : 'minmax(30px, 1fr)';
@@ -1041,6 +1096,7 @@ import { accountStrings } from './gfx-strings.js';
         grid.appendChild(cell);
       }
     host.appendChild(grid);
+    applyShellText();
     document.body.classList.toggle('mirror-emphasis', !!doc.settings.boardMirror);
   }
 
@@ -1080,12 +1136,12 @@ import { accountStrings } from './gfx-strings.js';
     } else if (v === -1) {
       b.className = base + ' drawn pre';
       b.disabled = true;
-      b.setAttribute('aria-label', edgeLabel(dir, r, c) + ', pre-drawn');
+      b.setAttribute('aria-label', edgeLabel(dir, r, c) + T(', pre-drawn'));
     } else {
-      var name = sess.state.players[v - 1] ? sess.state.players[v - 1].name : 'player ' + v;
+      var name = sess.state.players[v - 1] ? UI.playerName(sess.state.players[v - 1]) : T('player {n}', { n: v });
       b.className = base + ' drawn player-' + (v - 1);
       b.disabled = true;
-      b.setAttribute('aria-label', edgeLabel(dir, r, c) + ', drawn by ' + name);
+      b.setAttribute('aria-label', edgeLabel(dir, r, c) + T(', drawn by {name}', { name: name }));
     }
   }
 
@@ -1112,14 +1168,15 @@ import { accountStrings } from './gfx-strings.js';
     appState = 'resolving';
     sess.active = false;
     Audio.play('win');
-    announce('Lesson complete: ' + curLesson.title);
+    announce(T('Lesson complete: {name}', { name: T(curLesson.title) }));
     var lessons = Content.tutorialLessons();
     var idx = lessons.indexOf(curLesson);
     lastResultsCfg = { cfg: curCfg, lesson: curLesson };
     appState = 'results';
+    var lessonTitle = curLesson.title;
     showScreen('results', {
       headline: 'Lesson complete',
-      sub: curLesson.title,
+      sub: function () { return T(lessonTitle); },
       won: true,
       breakdown: { components: [], total: 0 },
       stars: null,
@@ -1139,8 +1196,9 @@ import { accountStrings } from './gfx-strings.js';
     if (curLesson && lessonDone) { finishLesson(); return; }
 
     Audio.play(out.draw ? 'drawn-game' : out.winner === 0 ? 'win' : 'lose');
-    var scoreLine = st.players.map(function (p, i) { return p.name + ' ' + st.scores[i]; }).join(' · ');
-    announce((out.draw ? 'A tie. ' : out.winner === 0 ? 'Victory! ' : 'Defeat. ') + scoreLine);
+    var finalPlayers = st.players.slice(), finalScores = st.scores.slice();
+    var scoreLine = function () { return finalPlayers.map(function (p, i) { return UI.playerName(p) + ' ' + finalScores[i]; }).join(' · '); };
+    announce(T(out.draw ? 'A tie.' : out.winner === 0 ? 'Victory!' : 'Defeat.') + ' ' + scoreLine());
 
     var breakdown = Rules.scoreBreakdown(st, 0, sess.elapsedMs);
     var won = out.winner === 0;
@@ -1181,7 +1239,7 @@ import { accountStrings } from './gfx-strings.js';
       var meta = Store.ACHIEVEMENTS.filter(function (a) { return a.key === key; })[0];
       if (meta) {
         newAchievements.push(meta);
-        showToast('🏅 ' + meta.name);
+        showToast('🏅 ' + T(meta.name));
         Audio.play('star');
       }
     }
@@ -1231,7 +1289,7 @@ import { accountStrings } from './gfx-strings.js';
       stars: curCfg.kind === 'journey' ? (stars || p.journeyStars[curCfg.id] || 0) : null,
       newAchievements: newAchievements,
       canNext: !!(nextStage && won),
-      lb: postLb ? ACCOUNT.lbPosting : null
+      lb: postLb ? function () { return lbLine == null ? ACCOUNT.lbPosting : lbText(lbLine); } : null
     });
     appState = 'progression';
     if (postLb) postToLeaderboard(breakdown.total);
@@ -1239,12 +1297,17 @@ import { accountStrings } from './gfx-strings.js';
 
   // Signed in only: post a finished ranked sheet's total to the platform
   // high-score board and show the player's rank on the results dialog.
+  var lbLine = null;
+  function lbText(r) {
+    return !r.posted ? ACCOUNT.lbNotPosted : r.rank ? ACCOUNT.lbRank.replace('{rank}', r.rank) : ACCOUNT.lbPosted;
+  }
   function postToLeaderboard(total) {
+    lbLine = null;
     P.submitScore(total).then(function (r) {
+      lbLine = r;
       var line = $('results-lb');
       if (!line) return;
-      line.textContent = !r.posted ? ACCOUNT.lbNotPosted
-        : r.rank ? ACCOUNT.lbRank.replace('{rank}', r.rank) : ACCOUNT.lbPosted;
+      line.textContent = lbText(r);
     });
   }
 
@@ -1291,7 +1354,16 @@ import { accountStrings } from './gfx-strings.js';
     P.init({
       onProfile: refreshAccountLine,
       onSync: refreshAccountLine,
-      onAuth: function (a) { if (!a.signedIn) signedOutNotice = true; if (currentScreen === 'title') showScreen('title'); }
+      onAuth: function (a) { if (!a.signedIn) signedOutNotice = true; if (currentScreen === 'title') showScreen('title'); },
+      // Cloud-save conflict: keep the better of every record from both devices
+      // (stars, bests, dailies, lessons, achievements, stats) and save the merge.
+      onConflict: function (remoteRaw) {
+        var remote = remoteRaw ? Store.loadRaw(remoteRaw) : null;
+        if (remote) Store.mergeProgress(doc, remote);
+        saveDoc();
+        if (overlayOpen() && ['title', 'journey', 'challenge', 'learn', 'profile'].indexOf(currentScreen) >= 0) renderScreen(currentScreen, currentData);
+      }
+
     }).then(function (remoteRaw) {
       if (!P.hosted) return;
       var remote = remoteRaw ? Store.loadRaw(remoteRaw) : null;

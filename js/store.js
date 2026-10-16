@@ -99,6 +99,36 @@
       root.BLPlatform.onLocalSave(wrapped); // StarHermit cloud + settings mirror
   }
 
+  // ---------- cloud-save conflict merge ----------
+  // Another device saved since this one last loaded. Keep the better of each
+  // record so neither side's progress is lost; this device's settings and
+  // profile name stay. Mutates and returns `local`.
+  function mergeProgress(local, remote) {
+    if (!remote || !remote.progress) return local;
+    var a = local.progress, b = remote.progress;
+    function maxMap(k) {
+      var out = Object.assign({}, b[k] || {});
+      Object.keys(a[k] || {}).forEach(function (id) { out[id] = Math.max(Number(out[id]) || 0, Number(a[k][id]) || 0); });
+      a[k] = out;
+    }
+    ['journeyStars', 'journeyBest', 'challengeBest', 'dailiesDone'].forEach(maxMap);
+    var done = Object.assign({}, b.tutorialDone || {});
+    Object.keys(a.tutorialDone || {}).forEach(function (id) { if (a.tutorialDone[id]) done[id] = true; });
+    a.tutorialDone = done;
+    var ach = Object.assign({}, b.achievements || {});
+    Object.keys(a.achievements || {}).forEach(function (k) {
+      ach[k] = ach[k] ? Math.min(ach[k], a.achievements[k]) : a.achievements[k]; // earliest unlock
+    });
+    a.achievements = ach;
+    var sa = a.stats, sb = b.stats || {};
+    ['rounds', 'wins', 'boxesClaimed', 'bestChain', 'playMs', 'dailyStreak'].forEach(function (k) {
+      sa[k] = Math.max(Number(sa[k]) || 0, Number(sb[k]) || 0);
+    });
+    if (String(sb.lastDaily || '') > String(sa.lastDaily || '')) sa.lastDaily = sb.lastDaily;
+    if (!local.profileName && remote.profileName) local.profileName = remote.profileName;
+    return local;
+  }
+
   // ---------- leaderboards (local; host adapter may sync) ----------
   function loadBoards() {
     try {
@@ -135,7 +165,7 @@
     SAVE_VERSION: SAVE_VERSION,
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     ACHIEVEMENTS: ACHIEVEMENTS,
-    load: load, loadRaw: loadRaw, save: save, fresh: fresh, migrate: migrate,
+    load: load, loadRaw: loadRaw, save: save, fresh: fresh, migrate: migrate, mergeProgress: mergeProgress,
     checksum: checksum,
     loadBoards: loadBoards, saveBoards: saveBoards, sortEntries: sortEntries
   };

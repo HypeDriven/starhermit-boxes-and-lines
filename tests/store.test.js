@@ -85,3 +85,26 @@ test('migrate maps the old quality tier to a graphics preset and copies graphics
   eq(f2.settings.graphics, {}, 'fresh docs do not share the graphics object');
   eq(Store.DEFAULT_SETTINGS.graphics, {}, 'defaults untouched');
 });
+
+test('mergeProgress keeps the better of both devices on a cloud-save conflict', function () {
+  var local = Store.fresh(), remote = Store.fresh();
+  local.settings.theme = 'kraft';
+  local.progress.journeyStars = { j01: 3, j02: 1 };
+  remote.progress.journeyStars = { j02: 2, j03: 1 };
+  local.progress.tutorialDone = { L1: true };
+  remote.progress.tutorialDone = { L2: true };
+  local.progress.achievements = { 'first-win': 200 };
+  remote.progress.achievements = { 'first-win': 100, 'first-box': 50 };
+  local.progress.dailiesDone = { '2026-01-01': 900 };
+  remote.progress.dailiesDone = { '2026-01-01': 1200, '2026-01-02': 400 };
+  local.progress.stats.rounds = 5; remote.progress.stats.rounds = 9;
+  local.progress.stats.bestChain = 6; remote.progress.stats.bestChain = 2;
+  var m = Store.mergeProgress(local, remote);
+  eq(m.progress.journeyStars, { j02: 2, j03: 1, j01: 3 });
+  eq(m.progress.tutorialDone, { L2: true, L1: true });
+  eq(m.progress.achievements, { 'first-win': 100, 'first-box': 50 });
+  eq(m.progress.dailiesDone, { '2026-01-01': 1200, '2026-01-02': 400 });
+  eq(m.progress.stats.rounds, 9);
+  eq(m.progress.stats.bestChain, 6);
+  eq(m.settings.theme, 'kraft', 'this device keeps its settings');
+});

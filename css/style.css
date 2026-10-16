@@ -631,7 +631,8 @@ button { font-family: inherit; font-size: inherit; }
   padding: 10px 0;
   border-bottom: 1px solid var(--rule);
 }
-.setting-row > span { font-weight: 600; }
+.setting-row > span { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.setting-row select { min-width: 0; max-width: 60%; text-overflow: ellipsis; }
 .setting-row input[type="checkbox"] {
   width: 24px;
   height: 24px;
