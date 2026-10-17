@@ -21,7 +21,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { detectPreset, resolve, SHADOW_MAP, PARTICLE_BUDGET } from './gfx.js';
+import { detectLevel, presetForLevel, resolve, SHADOW_MAP, PARTICLE_BUDGET } from './gfx.js';
 
 // ---------- authored framing constants ----------
 var FOV = 40;                 // low-distortion perspective
@@ -93,10 +93,11 @@ export function webglAvailable() {
 }
 
 // ---------- procedural textures ----------
-function makeDeskTexture(palette, rand) {
+function makeDeskTexture(palette, rand, size) {
   var cv = document.createElement('canvas');
-  cv.width = cv.height = 512;
+  cv.width = cv.height = size || 512; // per-preset texture budget; drawn in 512-px units
   var g = cv.getContext('2d');
+  g.scale(cv.width / 512, cv.width / 512);
   var base = new THREE.Color(palette.desk);
   var dark = new THREE.Color(palette.deskDark);
   var planks = 6, pw = 512 / planks;
@@ -128,10 +129,11 @@ function makeDeskTexture(palette, rand) {
 
 // Grayscale relief for the desk (used as bump + roughness map at "detailed"):
 // fine grain lines along the planks and sunken seams between them.
-function makeDeskRelief(rand) {
+function makeDeskRelief(rand, size) {
   var cv = document.createElement('canvas');
-  cv.width = cv.height = 256;
+  cv.width = cv.height = size || 256; // drawn in 256-px units
   var g = cv.getContext('2d');
+  g.scale(cv.width / 256, cv.width / 256);
   g.fillStyle = '#9a9a9a';
   g.fillRect(0, 0, 256, 256);
   var planks = 6, pw = 256 / planks;
@@ -196,9 +198,9 @@ function makeMoteTexture() {
   return new THREE.CanvasTexture(cv);
 }
 
-function makePaperTexture(palette, rows, cols) {
-  // Grid texture covering the sheet; cell = 64px per world unit.
-  var cell = 64, pad = 32;
+function makePaperTexture(palette, rows, cols, cellPx) {
+  // Grid texture covering the sheet; cell = cellPx (preset budget, 32–96) per world unit.
+  var cell = cellPx || 64, pad = cell / 2;
   var cv = document.createElement('canvas');
   cv.width = cols * cell + pad * 2;
   cv.height = rows * cell + pad * 2;
@@ -209,7 +211,7 @@ function makePaperTexture(palette, rows, cols) {
   g.fillRect(0, 0, cv.width, cv.height);
   g.strokeStyle = '#' + grid.getHexString();
   g.globalAlpha = 0.55;
-  g.lineWidth = 1;
+  g.lineWidth = Math.max(1, cell / 64);
   for (var r = 0; r <= rows; r++) {
     var y = pad + r * cell;
     g.beginPath(); g.moveTo(pad, y); g.lineTo(pad + cols * cell, y); g.stroke();
@@ -280,7 +282,7 @@ export function createRenderer(host, opts) {
   renderer.domElement.style.touchAction = 'none';
   host.appendChild(renderer.domElement);
 
-  // GPU detection → Auto preset (software renderers get Low, touch devices cap at Balanced).
+  // GPU name for detection and the Graphics summary.
   var gpuName = (function () {
     try {
       var gl = renderer.getContext();
@@ -292,11 +294,10 @@ export function createRenderer(host, opts) {
       return String(s || gl.getParameter(gl.RENDERER) || '');
     } catch (e) { return ''; }
   })();
-  var isMobile = (function () {
-    try { return window.matchMedia('(hover: none) and (pointer: coarse)').matches; } catch (e) { return false; }
-  })();
-  var detected = detectPreset(gpuName, isMobile);
-  var q = resolve(savedGfx, detected);
+  // Hardware level (StarHermitGpu) → Auto preset; SwiftShader is level 0 (Low), phones cap at Balanced.
+  var hwLevel = detectLevel(gpuName, window.StarHermitGpu ? window.StarHermitGpu.detectSystem() : {});
+  var detected = presetForLevel(hwLevel);
+  var q = resolve(savedGfx, detected, hwLevel);
 
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 80);
@@ -347,23 +348,36 @@ export function createRenderer(host, opts) {
       else fn(mats[k]);
     });
   }
+  // Material class per preset budget: Lambert on Low, Standard on Balanced, Physical (clearcoat) above.
+  function litMat(params, physical) {
+    var kind = q.budget.material;
+    if (kind === 'lambert') {
+      var lp = Object.assign({}, params);
+      delete lp.roughness; delete lp.metalness; delete lp.clearcoatRoughness;
+      return new THREE.MeshLambertMaterial(lp);
+    }
+    if (kind === 'physical' && physical) return new THREE.MeshPhysicalMaterial(params);
+    var sp = Object.assign({}, params);
+    delete sp.clearcoatRoughness;
+    return new THREE.MeshStandardMaterial(sp);
+  }
   function buildMaterials() {
     eachMat(function (m) { m.dispose(); });
     var ink = new THREE.Color(palette.dot != null ? palette.dot : 0x4a4038);
     mats = {
       // Lacquered ink pins and pencil-lacquer edge strips (clearcoat at "detailed").
-      dot: new THREE.MeshPhysicalMaterial({ color: ink, roughness: 0.45, metalness: 0.1, clearcoatRoughness: 0.2 }),
-      neutral: new THREE.MeshStandardMaterial({ color: 0x8a8a88, roughness: 0.85 }),
-      hole: new THREE.MeshStandardMaterial({ color: new THREE.Color(palette.wall || 0x3a2e26).multiplyScalar(0.4), roughness: 1 }),
+      dot: litMat({ color: ink, roughness: 0.45, metalness: 0.1, clearcoatRoughness: 0.2 }, true),
+      neutral: litMat({ color: 0x8a8a88, roughness: 0.85 }),
+      hole: litMat({ color: new THREE.Color(palette.wall || 0x3a2e26).multiplyScalar(0.4), roughness: 1 }),
       player: playerColors.map(function (c) {
-        return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.42, metalness: 0.0, clearcoatRoughness: 0.18 });
+        return litMat({ color: c, roughness: 0.42, metalness: 0.0, clearcoatRoughness: 0.18 }, true);
       }),
       // Folded paper boxes: matte card stock with fibre relief.
       box: playerColors.map(function (c) {
-        return new THREE.MeshStandardMaterial({ color: c, roughness: 0.72, metalness: 0.0 });
+        return litMat({ color: c, roughness: 0.72, metalness: 0.0 });
       }),
       stamp: playerColors.map(function (c) {
-        return new THREE.MeshStandardMaterial({
+        return litMat({
           color: new THREE.Color(c).multiplyScalar(0.55), roughness: 0.7, side: THREE.DoubleSide
         });
       }),
@@ -392,11 +406,11 @@ export function createRenderer(host, opts) {
     clearEnv();
     var w = Math.max(24, cols + 14), d = Math.max(18, rows + 11);
     // desk
-    var deskTex = trackEnv(makeDeskTexture(palette, rand));
+    var deskTex = trackEnv(makeDeskTexture(palette, rand, q.budget.texture));
     deskTex.repeat.set(w / 7, d / 6);
-    var relief = trackEnv(makeDeskRelief(mulberry32(0xDE5C)));
+    var relief = trackEnv(makeDeskRelief(mulberry32(0xDE5C), q.budget.texture / 2));
     relief.repeat.set(w / 7, d / 6);
-    var deskMat = trackEnv(new THREE.MeshStandardMaterial({ map: deskTex, roughness: 0.8 }));
+    var deskMat = trackEnv(litMat({ map: deskTex, roughness: 0.8 }));
     var deskGeo = trackEnv(new THREE.PlaneGeometry(w, d));
     var desk = new THREE.Mesh(deskGeo, deskMat);
     desk.rotation.x = -Math.PI / 2;
@@ -404,8 +418,8 @@ export function createRenderer(host, opts) {
     desk.receiveShadow = true;
     envGroup.add(desk);
     // paper sheet
-    var paperTex = trackEnv(makePaperTexture(palette, rows, cols));
-    var paperMat = trackEnv(new THREE.MeshStandardMaterial({ map: paperTex, roughness: 0.95 }));
+    var paperTex = trackEnv(makePaperTexture(palette, rows, cols, q.budget.paperCell));
+    var paperMat = trackEnv(litMat({ map: paperTex, roughness: 0.95 }));
     var paperGeo = trackEnv(new THREE.BoxGeometry(cols + 1.2, PAPER_THICK, rows + 1.2));
     var paper = new THREE.Mesh(paperGeo, paperMat);
     paper.position.y = -PAPER_THICK / 2;
@@ -413,7 +427,7 @@ export function createRenderer(host, opts) {
     envGroup.add(paper);
     // backdrop wall + fog
     var wallGeo = trackEnv(new THREE.PlaneGeometry(60, 30));
-    var wallMat = trackEnv(new THREE.MeshStandardMaterial({ color: palette.wall || 0x3a2e26, roughness: 1 }));
+    var wallMat = trackEnv(litMat({ color: palette.wall || 0x3a2e26, roughness: 1 }));
     var wall = new THREE.Mesh(wallGeo, wallMat);
     wall.position.set(0, 8, -Math.max(8, rows * 0.9 + 6));
     wall.receiveShadow = true;
@@ -438,7 +452,7 @@ export function createRenderer(host, opts) {
   var vEdgeGeo = new THREE.BoxGeometry(EDGE_W, EDGE_H, 0.86);
   var hHitGeo = new THREE.BoxGeometry(1.0, 0.25, HIT_W);
   var vHitGeo = new THREE.BoxGeometry(HIT_W, 0.25, 1.0);
-  var dotGeo = new THREE.CylinderGeometry(0.055, 0.065, 0.09, 12);
+  var dotGeo = new THREE.CylinderGeometry(0.055, 0.065, 0.09, q.budget.dotSegments); // LOD per preset
   var flapGeo = new THREE.BoxGeometry(1.0, PAPER_THICK, 0.5); // one flap, hinged later
   var floorGeo = new THREE.BoxGeometry(1.0, PAPER_THICK, 1.0);
   var stampGeos = [0, 1, 2, 3].map(makeStampGeometry);
@@ -741,7 +755,7 @@ export function createRenderer(host, opts) {
   // ---------- FX: pooled paper bursts & confetti ----------
   var burstPool = [];
   var confetti = null;
-  var fxBudget = function () { return PARTICLE_BUDGET[q.particles] || 80; };
+  var fxBudget = function () { return Math.min(PARTICLE_BUDGET[q.particles] || 80, q.budget.particles); };
 
   function makeBurst() {
     var n = 14;
@@ -890,7 +904,7 @@ export function createRenderer(host, opts) {
     if (on) ensureDust();
     if (dust) {
       dust.visible = on;
-      dust.geometry.setDrawRange(0, q.particles === 'high' ? MAX_DUST : Math.round(MAX_DUST / 3));
+      dust.geometry.setDrawRange(0, q.particles === 'high' ? q.budget.dust : Math.round(q.budget.dust / 3));
     }
   }
   function stepAmbient(dt) {
@@ -1292,7 +1306,7 @@ export function createRenderer(host, opts) {
       c.setSize(w, h);
       c.addPass(new RenderPass(scene, camera));
       if (q.ao !== 'off') {
-        var ao = new GTAOPass(scene, camera, pw, ph);
+        var ao = new GTAOPass(scene, camera, Math.round(pw * q.budget.aoRes), Math.round(ph * q.budget.aoRes));
         ao.output = GTAOPass.OUTPUT.Default;
         ao.blendIntensity = 0.75;
         ao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.4, thickness: 0.6, scale: 1.0, samples: q.ao === 'high' ? 16 : 8 });
@@ -1301,7 +1315,7 @@ export function createRenderer(host, opts) {
       }
       if (q.bloom === 'on') {
         // High threshold: only the glowing seat token, previews and bright glints bloom.
-        c.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.4, 0.88));
+        c.addPass(new UnrealBloomPass(new THREE.Vector2(Math.round(w * q.budget.bloomRes), Math.round(h * q.budget.bloomRes)), 0.5, 0.4, 0.88));
       }
       if (q.grade === 'on') c.addPass(new ShaderPass(GradeShader));
       c.addPass(new OutputPass());
@@ -1346,7 +1360,28 @@ export function createRenderer(host, opts) {
     else if (avg < 14 && adaptiveScale < 1) adaptiveScale = Math.min(1, Math.round((adaptiveScale + 0.05) * 100) / 100);
   }
 
+  // Preset asset variants (material class, texture sizes, pin LOD): rebuilt when the budget changes.
+  var builtAssets = '';
+  function applyAssets() {
+    var key = [q.budget.material, q.budget.texture, q.budget.paperCell, q.budget.dotSegments].join('|');
+    if (key === builtAssets) return;
+    var first = !builtAssets;
+    builtAssets = key;
+    if (first) return; // the initial build already used this budget
+    buildMaterials();
+    if (dotGeo.parameters.radialSegments !== q.budget.dotSegments) {
+      dotGeo.dispose();
+      dotGeo = new THREE.CylinderGeometry(0.055, 0.065, 0.09, q.budget.dotSegments);
+      edgeGroup.children.forEach(function (o) { if (o.isInstancedMesh) o.geometry = dotGeo; });
+    }
+    if (boardRows) buildEnv(boardRows, boardCols);
+    ensureTurnStrips();
+    rebindMaterials();
+    markMaterialsDirty();
+  }
+
   function applyGraphics() {
+    applyAssets();
     applyShadows();
     applyDetail();
     applyReflections();
@@ -1365,7 +1400,7 @@ export function createRenderer(host, opts) {
 
   function setGraphics(saved) {
     savedGfx = saved || {};
-    q = resolve(savedGfx, detected);
+    q = resolve(savedGfx, detected, hwLevel);
     applyGraphics();
     return q;
   }
@@ -1373,6 +1408,7 @@ export function createRenderer(host, opts) {
   function graphicsInfo() {
     return {
       gpu: gpuName,
+      level: hwLevel,
       detected: detected,
       resolved: q,
       pixels: [Math.round(size[0] * pixelRatio), Math.round(size[1] * pixelRatio)],
@@ -1388,7 +1424,7 @@ export function createRenderer(host, opts) {
   }
   function applySize() {
     var w = host.clientWidth || 1, h = host.clientHeight || 1;
-    var ratio = Math.min(window.devicePixelRatio || 1, 2) * ((window.UIScale && UIScale.value) || 1) * q.scale * adaptiveScale;
+    var ratio = Math.min((window.devicePixelRatio || 1) * ((window.UIScale && UIScale.value) || 1), q.budget.dprCap) * q.scale * adaptiveScale;
     if (w === size[0] && h === size[1] && ratio === pixelRatio) return;
     size = [w, h];
     pixelRatio = ratio;

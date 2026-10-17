@@ -13,6 +13,7 @@ var EN = {
   postFailed: 'Post-processing is unavailable on this device, so the board is drawn without it.',
   unavailable: '3D view unavailable',
   unknownGpu: 'unknown GPU',
+  level: 'Level {n}',
   cat: {
     shadows: 'Shadows', ao: 'Ambient occlusion', bloom: 'Bloom', grade: 'Color grade',
     antialias: 'Anti-aliasing', reflections: 'Reflections', detail: 'Surface detail',
@@ -45,6 +46,7 @@ var ES = derive(EN, {
   postFailed: 'El posprocesado no está disponible en este dispositivo, así que el tablero se dibuja sin él.',
   unavailable: 'Vista 3D no disponible',
   unknownGpu: 'GPU desconocida',
+  level: 'Nivel {n}',
   cat: {
     shadows: 'Sombras', ao: 'Oclusión ambiental', bloom: 'Resplandor', grade: 'Corrección de color',
     antialias: 'Antialiasing', reflections: 'Reflejos', detail: 'Detalle de superficies',
@@ -75,6 +77,7 @@ var DE = derive(EN, {
   postFailed: 'Nachbearbeitung ist auf diesem Gerät nicht verfügbar, daher wird das Brett ohne sie gezeichnet.',
   unavailable: '3D-Ansicht nicht verfügbar',
   unknownGpu: 'unbekannte GPU',
+  level: 'Stufe {n}',
   cat: {
     shadows: 'Schatten', ao: 'Umgebungsverdeckung', bloom: 'Leuchten', grade: 'Farbkorrektur',
     antialias: 'Kantenglättung', reflections: 'Reflexionen', detail: 'Oberflächendetails',
@@ -100,6 +103,7 @@ var FR = derive(EN, {
   postFailed: 'Le post-traitement n’est pas disponible sur cet appareil : le plateau est dessiné sans lui.',
   unavailable: 'Vue 3D indisponible',
   unknownGpu: 'GPU inconnu',
+  level: 'Niveau {n}',
   cat: {
     shadows: 'Ombres', ao: 'Occlusion ambiante', bloom: 'Halo lumineux', grade: 'Étalonnage des couleurs',
     antialias: 'Anticrénelage', reflections: 'Reflets', detail: 'Détail des surfaces',
@@ -131,6 +135,7 @@ var PT = derive(EN, {
   postFailed: 'O pós-processamento não está disponível neste dispositivo, então o tabuleiro é desenhado sem ele.',
   unavailable: 'Visão 3D indisponível',
   unknownGpu: 'GPU desconhecida',
+  level: 'Nível {n}',
   cat: {
     shadows: 'Sombras', ao: 'Oclusão ambiente', bloom: 'Brilho', grade: 'Correção de cor',
     antialias: 'Suavização de bordas', reflections: 'Reflexos', detail: 'Detalhe das superfícies',
@@ -156,6 +161,7 @@ var IT = derive(EN, {
   postFailed: 'La post-elaborazione non è disponibile su questo dispositivo, quindi il tabellone è disegnato senza.',
   unavailable: 'Vista 3D non disponibile',
   unknownGpu: 'GPU sconosciuta',
+  level: 'Livello {n}',
   cat: {
     shadows: 'Ombre', ao: 'Occlusione ambientale', bloom: 'Bagliore', grade: 'Correzione colore',
     antialias: 'Antialiasing', reflections: 'Riflessi', detail: 'Dettaglio superfici',

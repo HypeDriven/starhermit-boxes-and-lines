@@ -105,7 +105,7 @@ export function buildGraphicsPanel(host, api) {
     if (!i) {
       summary.textContent = S.unavailable + ' · ' + describe(r, null, S.summary);
     } else {
-      var parts = [i.gpu || S.unknownGpu, describe(r, i.pixels[0] ? i.pixels : null, S.summary)];
+      var parts = [(i.gpu || S.unknownGpu) + (i.level != null ? ' · ' + S.level.replace('{n}', i.level) : ''), describe(r, i.pixels[0] ? i.pixels : null, S.summary)];
       if (r.showFps && i.fps) parts.push(i.fps + ' fps');
       summary.textContent = parts.join(' · ');
     }

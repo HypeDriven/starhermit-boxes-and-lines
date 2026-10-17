@@ -338,6 +338,8 @@ async function playthrough(page, tag, errors) {
     await page.locator('#gfx-fps').uncheck();
     await page.waitForFunction(() =>
       /\d+×\d+ px/.test(document.getElementById('gfx-summary').textContent));
+    // The hardware level sits next to the GPU name (SwiftShader is level 0 → Auto picks Low).
+    if (!/ · Level 0 · /.test(await page.textContent('#gfx-summary'))) throw new Error('summary lacks the hardware level: ' + await page.textContent('#gfx-summary'));
     // The panel fits the viewport: no control spills past the right edge.
     const spill = await page.evaluate(() => {
       const w = document.documentElement.clientWidth;
