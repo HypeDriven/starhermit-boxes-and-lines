@@ -188,9 +188,9 @@ Confetti and dust counts scale with the GPU within a preset (`StarHermitGpu.scal
 
 **Benchmark** (`node tools/gfx-bench.mjs boxes-and-lines`, hook `tests/gfx-bench.mjs`: picks the preset in Settings, starts a Master Sheet 6×6 practice game and keeps drawing edges through the button board). Measured 2026-10-17 (AMD Radeon iGPU level 2 for GPU time, projected to each preset's floor level; RTX 5090 for CPU time):
 
-- Desktop 1920×1080: FAIL low (GPU p90 9.74 ms → ≈ 14.74 ms at level 0, CPU 0.90 ms); PASS balanced (15.18 → ≈ 10.04 ms at level 4, CPU 1.50 ms); PASS high (30.46 → ≈ 5.81 ms at level 10, CPU 2.00 ms); PASS ultra (75.90 → ≈ 3.40 ms at level 17, CPU 1.60 ms).
-- Mobile 390×844 @3×: FAIL low (15.12 → ≈ 22.88 ms, CPU 0.60 ms); PASS balanced (14.65 → ≈ 9.69 ms at level 4, CPU 1.00 ms).
-- Low sits at the benchmark's measurement floor on this machine: a blank page that only clears a full-window WebGL canvas measures 7.9–10.0 ms p90 on the iGPU at 1920×1080 (≈ 12–15 ms at level 0) and 13–15 ms in the mobile profile, so Low's own rendering cost (no shadows, no post, Lambert materials, 0.8 scale at DPR 1) is under 1 ms above it.
+- Desktop 1920×1080: FAIL low (GPU p90 11.14 ms → ≈ 16.85 ms at level 0, CPU 0.70 ms); PASS balanced (15.83 → ≈ 10.47 ms at level 4, CPU 1.30 ms); PASS high (21.95 → ≈ 4.19 ms at level 10, CPU 1.40 ms); PASS ultra (64.25 → ≈ 2.88 ms at level 17, CPU 1.10 ms).
+- Mobile 390×844 @3×: FAIL low (13.98 → ≈ 21.15 ms, CPU 0.50 ms); PASS balanced (13.39 → ≈ 8.85 ms at level 4, CPU 1.90 ms).
+- Low sits at the benchmark's measurement floor on this machine: a blank page that only clears a full-window WebGL canvas measures 7.9–11.4 ms p90 on the iGPU at 1920×1080 (≈ 12–17 ms at level 0) and 13–15 ms in the mobile profile (Low itself: no shadows, no post, Lambert materials, 0.8 scale at DPR 1).
 
 **Visual assets the design calls for:** title key art (a lamplit desk with stamped paper boxes) above the mode cards; a victory vignette (one folded box, bell, confetti) on winning results; a cover in the same still-life language; the icon and favicon. See §15 for status.
 

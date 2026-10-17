@@ -82,6 +82,16 @@ function mulberry32(seed) {
   };
 }
 
+
+// Run a post pass at a fraction of the frame (per-preset budget). EffectComposer sizes every pass to the
+// full frame in addPass/setSize, so the pass's own setSize is wrapped to apply the scale.
+function atScale(pass, k) {
+  if (!(k > 0 && k < 1)) return pass;
+  var setSize = pass.setSize.bind(pass);
+  pass.setSize = function (w, h) { setSize(Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))); };
+  return pass;
+}
+
 export function webglAvailable() {
   try {
     var c = document.createElement('canvas');
@@ -1306,7 +1316,7 @@ export function createRenderer(host, opts) {
       c.setSize(w, h);
       c.addPass(new RenderPass(scene, camera));
       if (q.ao !== 'off') {
-        var ao = new GTAOPass(scene, camera, Math.round(pw * q.budget.aoRes), Math.round(ph * q.budget.aoRes));
+        var ao = atScale(new GTAOPass(scene, camera, pw, ph), q.budget.aoRes);
         ao.output = GTAOPass.OUTPUT.Default;
         ao.blendIntensity = 0.75;
         ao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.4, thickness: 0.6, scale: 1.0, samples: q.ao === 'high' ? 16 : 8 });
@@ -1315,7 +1325,7 @@ export function createRenderer(host, opts) {
       }
       if (q.bloom === 'on') {
         // High threshold: only the glowing seat token, previews and bright glints bloom.
-        c.addPass(new UnrealBloomPass(new THREE.Vector2(Math.round(w * q.budget.bloomRes), Math.round(h * q.budget.bloomRes)), 0.5, 0.4, 0.88));
+        c.addPass(atScale(new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.4, 0.88), q.budget.bloomRes));
       }
       if (q.grade === 'on') c.addPass(new ShaderPass(GradeShader));
       c.addPass(new OutputPass());
