@@ -1,41 +1,44 @@
-// Localization coverage: every player-facing English key used by the game has
-// a translation in every shipped locale (regional tables inherit from their
-// parent: en-GB → en-US, es-ES → es-419, fr-CA → fr-FR).
+// Localization coverage: every player-facing English key the engine client
+// (native/*.ts) and the content use has a translation in every shipped locale
+// (regional tables inherit from their parent: en-GB → en-US, es-ES → es-419,
+// fr-CA → fr-FR), placeholders survive, and js/i18n.js matches tags and
+// switches locales the way native/i18n.ts drives it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
+const tables = () => require('../js/strings.js').BL_STRINGS;
 
-function tables() {
-  const sandbox = { self: {} };
-  vm.runInNewContext(read('js/strings.js'), sandbox);
-  return sandbox.self.BL_STRINGS;
-}
-
-/** Every English key the game passes through T(). */
+/** Every English key the game passes through T(), or names for it. */
 export function usedKeys() {
   const keys = new Set();
   const add = (k) => { if (k && /[A-Za-z]/.test(k)) keys.add(k); };
-  const unq = (s) => s.replace(/\\'/g, "'");
-  for (const f of ['js/ui.js', 'js/main.js', 'js/platform.js']) {
-    const src = read(f);
-    for (const m of src.matchAll(/\bT\(\s*'((?:[^'\\]|\\.)*)'/g)) add(unq(m[1]));
-    for (const m of src.matchAll(/'data-t(?:-aria)?':\s*'((?:[^'\\]|\\.)*)'/g)) add(unq(m[1]));
-    for (const m of src.matchAll(/(?<![.\w])(?:slider|toggle|choice|stat)\(\s*'((?:[^'\\]|\\.)*)'/g)) add(unq(m[1]));
-    for (const m of src.matchAll(/INVALID_TEXT\[[^\]]+\]\s*=\s*'((?:[^'\\]|\\.)*)'/g)) add(unq(m[1]));
-    for (const m of src.matchAll(/kind === '\w+' \? '((?:[^'\\]|\\.)*)'/g)) add(unq(m[1]));
+  const unq = (s) => s.replace(/\\(["'])/g, '$1');
+  const lit = String.raw`(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')`;
+  const grab = (src, re) => { for (const m of src.matchAll(re)) add(unq(m[1] ?? m[2] ?? '')); };
+  for (const f of readdirSync(new URL('native/', ROOT)).filter((n) => n.endsWith('.ts'))) {
+    const src = read('native/' + f);
+    grab(src, new RegExp(String.raw`\bT\(\s*` + lit, 'g'));
+    // settings rows, help card titles, stat labels, screen titles, headlines, invalid texts, captions
+    grab(src, new RegExp(String.raw`(?:check|select)\(\s*"\w+",\s*` + lit, 'g'));
+    grab(src, new RegExp(String.raw`^\s*\[` + lit + String.raw`,\s*(?:T\(|String)`, 'gm'));
+    grab(src, new RegExp(String.raw`INVALID_TEXT\[[^\]]+\]\s*=\s*` + lit, 'g'));
+    grab(src, new RegExp(String.raw`(?:headline|kind === "\w+") \? ` + lit, 'g'));
+    grab(src, new RegExp(String.raw`: ` + lit + String.raw`(?=[,;)])`, 'g'));
   }
-  ['Practice', 'Journey', 'Challenge', 'Learn', 'Settings', 'Help', 'Profile', 'Scores', 'Results',
-    'Global', 'Platform', 'Name', 'Score', 'Board', 'Time', 'easy', 'medium', 'hard',
-    'Draw a line', 'Claim a box', 'Extra turns chain', 'The third side is a gift', 'Winning', 'Controls',
-    'That move is not allowed.', 'Lesson complete', 'Time!', 'A tie!', 'Victory!', 'Defeat', 'A tie.', 'Defeat.',
-    'Claims a box — draw again!', 'Risky: gives away a box', 'Safe line',
-    'horizontal edge row {r} column {c}', 'vertical edge row {r} column {c}'].forEach(add);
+  // The values of a few tables keyed by id.
+  for (const m of read('native/screens.ts').match(/SCREEN_TITLES[^}]+}/)[0].matchAll(/: "([^"]+)"/g)) add(m[1]);
+  for (const m of read('native/audio.ts').match(/CAPTIONS[^}]+}/)[0].matchAll(/: "([^"]+)"/g)) add(m[1]);
+  ['Global', 'Platform', '#', 'Name', 'Score', 'Board', 'Time', 'easy', 'medium', 'hard', 'Draw a line', 'Claim a box',
+    'Extra turns chain', 'The third side is a gift', 'Winning', 'Controls', 'Lesson complete', 'Time!', 'A tie!', 'Victory!', 'Defeat',
+    'Matches', 'Wins', 'Boxes claimed', 'Best chain', 'Journey stars', 'Time played',
+    // ternaries and fallbacks inside T(…)
+    'Claim the most boxes', 'horizontal edge row {r} column {c}', 'vertical edge row {r} column {c}', 'That move is not allowed.',
+    'A tie.', 'Victory!', 'Defeat.', 'Player {id}'].forEach(add);
   const Content = require('../js/content.js');
   Content.JOURNEY.forEach((l) => { add(l.name); add(l.intro); });
   Content.CHALLENGES.forEach((c) => { add(c.name); add(c.goalText); });
@@ -46,6 +49,8 @@ export function usedKeys() {
   const Store = require('../js/store.js');
   Store.ACHIEVEMENTS.forEach((a) => { add(a.name); add(a.desc); });
   for (const m of read('js/rules.js').matchAll(/label: '((?:[^'\\]|\\.)*)'/g)) add(m[1]);
+  // Not text: game names, glyphs, ids and style classes the patterns catch.
+  for (const k of [...keys]) if (k === 'Boxes & Lines' || !/[a-z]{2}/.test(k) || /^[a-z0-9-]+$/.test(k) && !/^(easy|medium|hard|select|undo|hint|paused|chain!|platform|timed|locked)$/.test(k) || /^\$|^#|\.(js|ts|webp|json|opus)$|^rgba\(|^starhermit:|^\w+:\w/.test(k)) keys.delete(k);
   return [...keys].sort();
 }
 
@@ -74,32 +79,22 @@ test('placeholders survive translation; regional tables only override known keys
   assert.deepEqual(bad, []);
 });
 
-test('i18n picks the locale through sh-language and re-renders on change', () => {
-  const events = [];
-  const doc = {
-    documentElement: { lang: 'en' },
-    dispatchEvent: (e) => events.push(e.detail.lang),
-  };
-  const sandbox = {
-    self: {}, document: doc, location: { search: '' },
-    navigator: { languages: ['de-DE'], language: 'de-DE' },
-    localStorage: { getItem: () => null, setItem: () => {} },
-    CustomEvent: class { constructor(t, o) { this.type = t; this.detail = o.detail; } },
-    URLSearchParams,
-  };
-  sandbox.self = sandbox; sandbox.window = sandbox;
-  vm.createContext(sandbox);
-  vm.runInContext(read('sh-language.js'), sandbox);
-
-  vm.runInContext(read('js/strings.js'), sandbox);
-  vm.runInContext(read('js/i18n.js'), sandbox);
-  const I = sandbox.BLI18N;
+test('i18n matches the runtime language to a shipped locale and switches', () => {
+  const I = require('../js/i18n.js');
+  assert.equal(I.match('de-AT'), 'de-DE');
+  assert.equal(I.match('es-MX'), 'es-419');
+  assert.equal(I.match('es-ES'), 'es-ES');
+  assert.equal(I.match('en-AU'), 'en-GB');
+  assert.equal(I.match('fr-CA'), 'fr-CA');
+  assert.equal(I.match('pt-PT'), 'pt-BR');
+  assert.equal(I.match('ja-JP'), 'en-US');
+  I.setLocale('de-DE');
   assert.equal(I.lang, 'de-DE');
-  assert.equal(doc.documentElement.lang, 'de-DE');
-  assert.equal(I.T('Pause'), 'Pause');
   assert.equal(I.T('Resume'), 'Fortsetzen');
-  I.language.setChoice('fr-CA');
-  assert.equal(I.lang, 'fr-CA');
-  assert.equal(events.at(-1), 'fr-CA');
+  I.setLocale('fr-CA');
+  assert.equal(I.T('Scores'), 'Pointages'); // regional
+  assert.equal(I.T('Resume'), I.tables['fr-FR']['Resume']); // inherited from fr-FR
   assert.equal(I.T('Journey {n} — {name}', { n: 3, name: 'X' }).includes('3'), true);
+  I.setLocale('en-US');
+  assert.equal(I.T('Resume'), 'Resume');
 });

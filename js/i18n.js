@@ -3,19 +3,23 @@
  * Nine locales: en-US, en-GB, es-419, es-ES, de-DE, fr-FR, fr-CA, pt-BR, it-IT.
  * English source strings are the keys; js/strings.js holds one table per
  * locale (en-GB, es-ES and fr-CA carry only their differences from en-US,
- * es-419 and fr-FR). The locale comes from the game's Language setting
- * through sh-language.js (explicit choice → StarHermit account preference →
- * navigator.languages → en-US); ?lang= forces one for the page load (QA).
- * Changing the language updates document.documentElement.lang and fires
- * `bl-language` so every screen re-renders in place.
- * Browser global: window.BLI18N (T is also exposed as window.BLT).
+ * es-419 and fr-FR). The locale is the runtime's interface language
+ * (native/i18n.ts calls setLocale with frame()'s / preferences().language,
+ * the player's choice in Options › Language, else the account's or the
+ * device's).
+ * UMD: globalThis.BLI18N (loadClassic, after js/strings.js) / Node.
  */
-(function (root) {
+(function (root, factory) {
+  var S = (typeof module === 'object' && module.exports) ? require('./strings.js').BL_STRINGS : root.BL_STRINGS;
+  var api = factory(S || {});
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.BLI18N = api;
+})(typeof self !== 'undefined' ? self : this, function (TABLES) {
   'use strict';
 
   var LOCALES = ['en-US', 'en-GB', 'es-419', 'es-ES', 'de-DE', 'fr-FR', 'fr-CA', 'pt-BR', 'it-IT'];
   var PARENT = { 'en-GB': 'en-US', 'es-ES': 'es-419', 'fr-CA': 'fr-FR' };
-  var TABLES = root.BL_STRINGS || {};
+  var PRIMARY = { en: 'en-US', es: 'es-419', de: 'de-DE', fr: 'fr-FR', pt: 'pt-BR', it: 'it-IT' };
   var lang = 'en-US';
 
   function lookup(key) {
@@ -33,28 +37,21 @@
     return s;
   }
 
-  function setLocale(next) {
-    lang = LOCALES.indexOf(next) >= 0 ? next : 'en-US';
-    document.documentElement.lang = lang;
-    document.dispatchEvent(new CustomEvent('bl-language', { detail: { lang: lang } }));
+  /** The shipped locale nearest a BCP 47 tag (en-GB, es-ES and fr-CA by region). */
+  function match(tag) {
+    var t = String(tag || 'en-US');
+    for (var i = 0; i < LOCALES.length; i++) if (LOCALES[i].toLowerCase() === t.toLowerCase()) return LOCALES[i];
+    var base = t.split('-')[0].toLowerCase();
+    if (base === 'en' && /-(gb|ie|au|nz|za|in)$/i.test(t)) return 'en-GB';
+    if (base === 'es' && /-es$/i.test(t)) return 'es-ES';
+    if (base === 'fr' && /-ca$/i.test(t)) return 'fr-CA';
+    return PRIMARY[base] || 'en-US';
   }
 
-  var forced = null;
-  try { forced = new URLSearchParams(root.location.search).get('lang'); } catch (e) { /* opaque origin */ }
-  var SL = root.StarHermitLanguage;
-  var forcedLocale = forced && SL ? SL.match(forced, LOCALES) : null;
-  var language = SL ? SL.create({
-    game: 'boxes-and-lines', supported: LOCALES, panel: !forcedLocale,
-    apply: function (locale) { setLocale(forcedLocale || locale); }
-  }) : null;
-  if (!language) setLocale('en-US');
+  function setLocale(tag) { lang = match(tag); return lang; }
 
-  root.BLT = T;
-  root.BLI18N = {
-    T: T,
-    get lang() { return lang; },
-    locales: LOCALES,
-    language: language,
-    tables: TABLES
+  return {
+    T: T, match: match, setLocale: setLocale, LOCALES: LOCALES, tables: TABLES,
+    get lang() { return lang; }
   };
-})(typeof self !== 'undefined' ? self : this);
+});
