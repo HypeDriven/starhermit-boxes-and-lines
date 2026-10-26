@@ -35,10 +35,17 @@ save paused
 click Settings
 until 60 Captions for sound cues
 frames 10
-click Confirm moves (tap edge twice)
+# The toggle sits below the fold at 960x540: Tab to it (focus scrolls it into view).
+key Tab 2
+key Tab 2
+key Tab 2
+key Tab 2
+frames 5
+key Space 2
 frames 10
+expect Confirm moves (tap edge twice)
 save settings
-click Confirm moves (tap edge twice)
+key Space 2
 frames 5
 key Escape 2
 until 60 Resume
