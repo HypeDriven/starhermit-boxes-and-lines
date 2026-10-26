@@ -1,0 +1,110 @@
+# Practice: the Practice card by Tab, Study 4×4 against Margot, a line by the
+# keyboard and its undo (U), the pause dialog (Escape) → Settings (a setting
+# toggled) → Back → Help → Back → Resume, then Pause → Leave sheet to the title;
+# then Scores and Profile from the title by Tab (they sit below the fold at 960×540).
+until 300 Daily Sheet
+frames 30
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 10
+key Enter 2
+until 60 Start sheet
+frames 20
+click Study · 4×4
+frames 5
+save practice
+click Start sheet
+until 200 Your turn
+frames 30
+key Home 2
+frames 3
+key Enter 2
+frames 80
+save drawn
+key KeyU 2
+until 60 Your turn
+frames 30
+save undone
+key Escape 2
+until 60 Resume
+frames 10
+save paused
+click Settings
+until 60 Captions for sound cues
+frames 10
+click Confirm moves (tap edge twice)
+frames 10
+save settings
+click Confirm moves (tap edge twice)
+frames 5
+key Escape 2
+until 60 Resume
+frames 10
+click Help
+until 60 Claim a box
+frames 10
+save help
+click ← Back
+until 60 Resume
+frames 10
+click Resume
+frames 30
+key KeyH 2
+frames 30
+save hint
+click Pause
+until 60 Leave sheet
+frames 40
+save paused-again
+click Leave sheet
+frames 10
+save left
+until 120 Daily Sheet
+frames 10
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Enter 2
+until 60 Global
+frames 10
+save scores
+key Escape 2
+until 60 Daily Sheet
+frames 30
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Tab 2
+frames 3
+key Enter 2
+until 60 Display name
+frames 10
+save profile
+click ← Back
+until 60 Daily Sheet
+frames 5

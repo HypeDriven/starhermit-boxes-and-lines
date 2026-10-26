@@ -151,7 +151,10 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.webp': 'image/webp',
   '.ico': 'image/x-icon',
-  '.opus': 'audio/ogg'
+  '.opus': 'audio/ogg',
+  // the engine package: its entry modules and the file index
+  '.ts': 'text/plain; charset=utf-8',
+  '.json': 'application/json; charset=utf-8'
 };
 
 function serveStatic(req, res, urlPath) {
@@ -163,6 +166,8 @@ function serveStatic(req, res, urlPath) {
   if (base.startsWith('.')) return notFound(res);
   // Dev-only folders are never served (tests, tooling, dependencies).
   if (/^\/(tests|tools|node_modules)(\/|$)/.test(rel)) return notFound(res);
+  // Nor the npm and TypeScript project files beside the package.
+  if (/^\/(package(-lock)?|tsconfig)\.json$/.test(rel)) return notFound(res);
   const mime = MIME[path.extname(resolved).toLowerCase()];
   if (!mime) return notFound(res);
   fs.stat(resolved, (err, st) => {
