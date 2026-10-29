@@ -18,8 +18,6 @@
 //   OutputPass, SMAA / FXAA / MSAA) is renderer.ao / bloom / grade /
 //   antialias; the grade's GLSL is the built-in grade with the same curve,
 //   tints and vignette.
-// - bumpMap (the desk's wood grain, the paper and boxes' fibre) is a normal
-//   map made from the same height canvases; the desk's roughness map stays.
 // - ShapeGeometry (the triangle and diamond stamps) is CircleGeometry with
 //   three and four segments.
 // - Picking: the engine's raycaster hits only visible meshes, so the
@@ -28,14 +26,15 @@
 // - The camera frames the sheet inside the playfield rectangle the HUD and
 //   the button board leave, with setViewOffset (the browser build's canvas
 //   sat between them).
-// - The fitted orthographic shadow box is the engine's view-based
-//   directional shadow (`shadow.distance`).
-// - Light intensities are three.js r160's divided by π (the engine's
-//   convention). Canvas textures are starhermit:canvas CanvasTextures.
+// - Light intensities, shadow values (the box fitted to the sheet) and the
+//   PMREM RoomEnvironment(renderer) are three.js r160's as the page had them
+//   (engine minor 28). Standard materials get the room as their own envMap
+//   so their envMapIntensity applies as r160 did with scene.environment.
+//   Canvas textures are starhermit:canvas CanvasTextures.
 import {
   ACESFilmicToneMapping, AdditiveBlending, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CircleGeometry, Color,
-  CylinderGeometry, DataTexture, DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, InstancedMesh, Matrix4, Mesh,
-  MeshBasicMaterial, MeshLambertMaterial, MeshPhysicalMaterial, MeshStandardMaterial, NoColorSpace, PMREMGenerator,
+  CylinderGeometry, DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, InstancedMesh, Matrix4, Mesh,
+  MeshBasicMaterial, MeshLambertMaterial, MeshPhysicalMaterial, MeshStandardMaterial, NoColorSpace, OrthographicCamera, PCFSoftShadowMap, PMREMGenerator,
   PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Raycaster, RepeatWrapping, RingGeometry, RoomEnvironment,
   SRGBColorSpace, Vector3, pointerToNdc, renderer, scene,
 } from "starhermit:scene";
@@ -52,8 +51,6 @@ const PAPER_THICK = 0.012, EDGE_W = 0.055, EDGE_H = 0.03, HIT_W = 0.32, HOLE_DEP
 const MAX_BURSTS = 48;
 const KEY_DIR = new Vector3(-4, 7, 3).normalize();
 const PREVIEW_COLORS: Record<string, number> = { ok: 0x6fd98a, risky: 0xe8a13f, claim: 0xffffff };
-/** The engine's RoomEnvironment lights stronger than three's PMREM room: 0.3 matches it (bistro-builder's finding). */
-const ENV_WORLD = 0.3;
 const ENV_INTENSITY: Record<string, number> = { dot: 0.35, neutral: 0.3, hole: 0.15, player: 0.3, box: 0.25, stamp: 0.25, desk: 0.3, paper: 0.28, wall: 0.15 };
 
 function mulberry32(seed: number): () => number {
@@ -80,12 +77,12 @@ let built = false;
 const rand = mulberry32(0xb0e5 ^ 0x51eed);
 
 const camera = new PerspectiveCamera(FOV, 16 / 9, 0.1, 80);
-const hemi = new HemisphereLight(0xfff2e0, 0x30241a, 0.55 / PI);
-const key = new DirectionalLight(0xffd9a8, 2.2 / PI);
+const hemi = new HemisphereLight(0xfff2e0, 0x30241a, 0.55);
+const key = new DirectionalLight(0xffd9a8, 2.2);
+key.position.copy(KEY_DIR).multiplyScalar(12);
 key.shadow.bias = -0.0004;
-key.shadow.normalBias = 1;
+key.shadow.normalBias = 0.015;
 key.shadow.radius = 2;
-key.shadow.distance = 24;
 
 const envGroup = new Group();
 const boardGroup = new Group();
@@ -108,31 +105,6 @@ function setup(): void {
 function canvas(size: number): { c: OffscreenCanvas; g: OffscreenCanvasRenderingContext2D } {
   const c = new OffscreenCanvas(size, size);
   return { c, g: c.getContext("2d") };
-}
-/** A tangent-space normal map from a canvas's luminance (the browser build's bump maps). */
-function normalFrom(g: OffscreenCanvasRenderingContext2D, px: number, strength: number): Texture {
-  const src = g.getImageData(0, 0, px, px).data;
-  const h = new Float32Array(px * px);
-  for (let i = 0; i < px * px; i++) h[i] = (src[i * 4]! * 0.299 + src[i * 4 + 1]! * 0.587 + src[i * 4 + 2]! * 0.114) / 255;
-  const out = new Uint8Array(px * px * 4);
-  for (let y = 0; y < px; y++) {
-    for (let x = 0; x < px; x++) {
-      // wrap: the maps tile
-      const l = h[y * px + ((x - 1 + px) % px)]!, r = h[y * px + ((x + 1) % px)]!;
-      const u = h[((y - 1 + px) % px) * px + x]!, d = h[((y + 1) % px) * px + x]!;
-      const nx = (l - r) * strength, ny = (d - u) * strength;
-      const len = Math.hypot(nx, ny, 1);
-      const o = (y * px + x) * 4;
-      out[o] = Math.round((nx / len * 0.5 + 0.5) * 255);
-      out[o + 1] = Math.round((ny / len * 0.5 + 0.5) * 255);
-      out[o + 2] = Math.round((1 / len * 0.5 + 0.5) * 255);
-      out[o + 3] = 255;
-    }
-  }
-  const tex = new DataTexture(out, px, px);
-  tex.colorSpace = NoColorSpace;
-  tex.wrapS = tex.wrapT = RepeatWrapping;
-  return tex;
 }
 
 function deskTexture(size: number): Texture {
@@ -161,8 +133,8 @@ function deskTexture(size: number): Texture {
   tex.wrapS = tex.wrapT = RepeatWrapping;
   return tex;
 }
-/** The desk's relief: fine grain along the planks, sunken seams. Returns the roughness map and its normal map. */
-function deskRelief(size: number): { rough: Texture; normal: Texture } {
+/** The desk's relief (bump + roughness map at "detailed"): fine grain along the planks, sunken seams. */
+function deskRelief(size: number): Texture {
   const r2 = mulberry32(0xde5c);
   const { c, g } = canvas(size);
   g.scale(size / 256, size / 256);
@@ -185,14 +157,15 @@ function deskRelief(size: number): { rough: Texture; normal: Texture } {
   const rough = new CanvasTexture(c);
   rough.colorSpace = NoColorSpace;
   rough.wrapS = rough.wrapT = RepeatWrapping;
-  return { rough, normal: normalFrom(g, size, 2.0 * (size / 256)) };
+  return rough;
 }
-let fibre: Texture | null = null;
-/** Tileable paper-fibre noise as a normal map (the sheet and the folded boxes). */
-function fibreTexture(): Texture {
-  if (fibre) return fibre;
+const fibre = new Map<number, Texture>();
+/** Tileable paper-fibre noise, the bump map of the sheet (repeat 3) and the folded boxes (repeat 1). */
+function fibreTexture(repeat: number): Texture {
+  const hit = fibre.get(repeat);
+  if (hit) return hit;
   const r2 = mulberry32(0xf1be), n = 128;
-  const { g } = canvas(n);
+  const { c, g } = canvas(n);
   const img = g.createImageData(n, n);
   for (let i = 0; i < n * n; i++) {
     const v = 118 + Math.floor(r2() * 40);
@@ -206,8 +179,12 @@ function fibreTexture(): Texture {
     g.lineWidth = 0.7;
     g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
   }
-  fibre = normalFrom(g, n, 0.6);
-  return fibre;
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = NoColorSpace;
+  tex.wrapS = tex.wrapT = RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  fibre.set(repeat, tex);
+  return tex;
 }
 let moteTex: Texture | null = null;
 function moteTexture(): Texture {
@@ -271,13 +248,13 @@ function buildMaterials(): void {
     turn: playerColors.map((c) => new MeshBasicMaterial({ color: new Color(c).multiplyScalar(look?.bloom ? 1.35 : 1), transparent: true, opacity: 0 })),
   };
   if (detailed && BUD.material !== "lambert") {
-    for (const m of mats.box) { (m as MeshStandardMaterial).normalMap = fibreTexture(); (m as MeshStandardMaterial).normalScale.set(0.6, 0.6); }
+    for (const m of mats.box) { (m as MeshStandardMaterial).bumpMap = fibreTexture(1); (m as MeshStandardMaterial).bumpScale = 0.6; }
   }
   for (const k of ["dot", "neutral", "hole"] as const) setEnv(mats[k], ENV_INTENSITY[k]!);
   for (const k of ["player", "box", "stamp"] as const) for (const m of mats[k]) setEnv(m, ENV_INTENSITY[k]!);
 }
 function setEnv(m: Material, k: number): void {
-  if (m instanceof MeshStandardMaterial) m.envMapIntensity = k;
+  if (m instanceof MeshStandardMaterial) { m.envMapIntensity = k; m.envMap = look?.reflections ? envTex : null; }
 }
 
 // ---------------------------------------------------------------- environment
@@ -292,6 +269,17 @@ function clearGroup(gr: Group): void {
   }
 }
 const envTextures: Texture[] = [];
+/** Shadow frustum fitted to the sheet (plus the seat tokens), as the browser build's. */
+function fitShadow(): void {
+  const hx = Math.max(boardCols, 2) / 2 + 1.2, hz = Math.max(boardRows, 2) / 2 + 1.2;
+  const ext = Math.sqrt(hx * hx + hz * hz) * 0.92;
+  const sc = key.shadow.camera as OrthographicCamera;
+  key.position.copy(KEY_DIR).multiplyScalar(12);
+  key.target.position.set(0, 0, 0);
+  sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext;
+  sc.near = 4; sc.far = 20;
+  sc.updateProjectionMatrix();
+}
 function buildEnv(rows: number, cols: number): void {
   clearGroup(envGroup);
   for (const t of envTextures.splice(0)) t.dispose();
@@ -303,11 +291,11 @@ function buildEnv(rows: number, cols: number): void {
   const deskMat = litMat({ map: deskTex, roughness: detailed ? 0.9 : 0.8 });
   if (detailed && deskMat instanceof MeshStandardMaterial) {
     const rel = deskRelief(BUD.texture / 2);
-    rel.rough.repeat.set(w / 7, d / 6);
-    rel.normal.repeat.set(w / 7, d / 6);
-    envTextures.push(rel.rough, rel.normal);
-    deskMat.roughnessMap = rel.rough;
-    deskMat.normalMap = rel.normal;
+    rel.repeat.set(w / 7, d / 6);
+    envTextures.push(rel);
+    deskMat.roughnessMap = rel;
+    deskMat.bumpMap = rel;
+    deskMat.bumpScale = 2.0;
   }
   setEnv(deskMat, ENV_INTENSITY.desk!);
   const desk = new Mesh(new PlaneGeometry(w, d), deskMat);
@@ -320,9 +308,8 @@ function buildEnv(rows: number, cols: number): void {
   envTextures.push(paperTex);
   const paperMat = litMat({ map: paperTex, roughness: 0.95 });
   if (detailed && paperMat instanceof MeshStandardMaterial) {
-    const f = fibreTexture();
-    paperMat.normalMap = f;
-    paperMat.normalScale.set(0.6, 0.6);
+    paperMat.bumpMap = fibreTexture(3);
+    paperMat.bumpScale = 0.6;
   }
   setEnv(paperMat, ENV_INTENSITY.paper!);
   const paper = new Mesh(new BoxGeometry(cols + 1.2, PAPER_THICK, rows + 1.2), paperMat);
@@ -422,6 +409,7 @@ export function setBoard(rows: number, cols: number, holes: Record<string, boole
   clearFx();
   boardRows = rows; boardCols = cols;
   buildEnv(rows, cols);
+  fitShadow();
   heViews = []; veViews = []; cellViews = [];
   if (dotSegs !== BUD.dotSegments) { dotGeo.dispose(); dotGeo = new CylinderGeometry(0.055, 0.065, 0.09, BUD.dotSegments); dotSegs = BUD.dotSegments; }
   dots = new InstancedMesh(dotGeo, mats!.dot, (rows + 1) * (cols + 1));
@@ -557,7 +545,7 @@ function makeBurst(): Burst {
   const pos = new Float32Array(n * 3);
   const geo = new BufferGeometry();
   geo.setAttribute("position", new BufferAttribute(pos, 3));
-  const pts = new Points(geo, new PointsMaterial({ size: 0.05, transparent: true, opacity: 1, depthWrite: false }));
+  const pts = new Points(geo, new PointsMaterial({ size: 0.05, transparent: true, opacity: 1 }));
   pts.visible = false;
   fxGroup.add(pts);
   return { pts, pos, vel: new Float32Array(n * 3), life: 0, dur: 0.5, n };
@@ -589,7 +577,7 @@ function spawnConfetti(winner: number): void {
     const geo = new BufferGeometry();
     geo.setAttribute("position", new BufferAttribute(pos, 3));
     geo.setAttribute("color", new BufferAttribute(col, 3));
-    const pts = new Points(geo, new PointsMaterial({ size: 0.09, vertexColors: true, transparent: true, depthWrite: false }));
+    const pts = new Points(geo, new PointsMaterial({ size: 0.09, vertexColors: true, transparent: true }));
     fxGroup.add(pts);
     confetti = { pts, pos, col, vel: new Float32Array(n * 3), life: 0 };
   }
@@ -783,6 +771,8 @@ export function setPlayfield(x: number, y: number, w: number, h: number, W: numb
   if (k === pfKey) return;
   pfKey = k;
   Object.assign(pf, { x, y, w: Math.max(2, w), h: Math.max(2, h), W: Math.max(2, W), H: Math.max(2, H) });
+  camera.aspect = pf.w / pf.h;
+  camera.updateProjectionMatrix();
   camera.setViewOffset(pf.w, pf.h, -pf.x, -pf.y, pf.W, pf.H);
   if (!camAnim) fitCamera();
 }
@@ -865,21 +855,25 @@ export function applyLook(next: Look): void {
   if (!built) setup();
   const shadows = next.shadows > 0;
   renderer.shadowMap.enabled = shadows;
+  renderer.shadowMap.type = PCFSoftShadowMap;
   key.castShadow = shadows;
   if (shadows) key.shadow.mapSize = next.shadows;
   key.shadow.radius = next.shadows >= 4096 ? 3 : 2;
   if (next.reflections) {
     if (!envTex) {
-      try { envTex = new PMREMGenerator().fromScene(new RoomEnvironment(), 0.04).texture; }
+      try { envTex = new PMREMGenerator(renderer).fromScene(new RoomEnvironment(renderer), 0.04).texture; }
       catch (e) { console.warn("environment:", e instanceof Error ? e.message : String(e)); }
     }
     scene.environment = envTex;
-    scene.environmentIntensity = ENV_WORLD;
-    hemi.intensity = 0.32 / PI;
+    hemi.intensity = 0.32;
   } else {
     scene.environment = null;
-    hemi.intensity = 0.55 / PI;
+    hemi.intensity = 0.55;
   }
+  const env = next.reflections ? envTex : null;
+  scene.traverse((o) => {
+    if (o instanceof Mesh && o.material instanceof MeshStandardMaterial) o.material.envMap = env;
+  });
   renderer.ao = next.ao === "off" ? null : {
     blendIntensity: 0.75, radius: 0.35, distanceExponent: 1.4, thickness: 0.6, scale: 1.0, samples: next.ao === "high" ? 16 : 8,
     denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: next.ao === "high" ? 6 : 4, rings: 2, samples: next.ao === "high" ? 16 : 8, radiusExponent: 2 },
@@ -947,6 +941,4 @@ export function frame(dtRaw: number): void {
   stepCamera(dt);
   stepAmbient(dt);
   stepTurn(dt);
-  key.target.position.copy(camTarget);
-  key.position.copy(camTarget).addScaledVector(KEY_DIR, 12);
 }

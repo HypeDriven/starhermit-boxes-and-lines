@@ -11,7 +11,7 @@
 | Genre | Turn-based territory strategy (pencil-and-paper classic, single sheet) |
 | Players | 1 human vs 1–3 AI rivals locally |
 | Session length | 2×3 lesson sheets ≈ 1 min; 4×4 ≈ 3–5 min; 7×7 journey finale ≈ 10 min |
-| Platforms | StarHermit engine 1.24.0 script game (host API 1.21): natively in the StarHermit client, in desktop and mobile browsers (portrait and landscape) through the engine's web runtime |
+| Platforms | StarHermit engine 1.26.1 script game: natively in the StarHermit client, in desktop and mobile browsers (portrait and landscape) through the engine's web runtime |
 | Rendering | `starhermit:scene` desk, paper, dots, edges and folding boxes; `starhermit:ui` HUD, dialogs and a "button board" mirror that is always on screen and fully playable on its own |
 | Networking | None standalone; signed in, the runtime's platform modules carry the cloud save, the game's settings, the invite link, the profile names and the leaderboard post after a ranked sheet (see §12). `server.js` is a local static host whose session/score routes the client does not call |
 
@@ -19,7 +19,7 @@ File map (everything that ships or tests the game):
 
 | Path | Responsibility |
 |---|---|
-| `starhermit.txt` | Manifest: name, owner, `server=score-script.js`, cover, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.24.0`, `engine.minor=16`, capabilities `platform,storage,clipboard`, 13 `control.*` actions with `engine.gamepad.*` defaults and Options groups |
+| `starhermit.txt` | Manifest: name, owner, `server=score-script.js`, cover, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.26.1`, `engine.minor=28`, capabilities `platform,storage,clipboard`, 13 `control.*` actions with `engine.gamepad.*` defaults and Options groups |
 | `index.html`, `starhermit-files.json` | The web loader and file index `starhermit package --web .` writes (`npm run package`; never edited by hand) |
 | `native/main.ts` | Entry module: the sheet in play (session, AI pacing on fixed steps, clock, lessons, end of sheet → stars, bests, stats, achievements, leaderboards), screen state, input routing, lifecycle |
 | `native/screens.ts` | Every screen, the HUD, the button board, toast, captions, pause dialog (`starhermit:ui`, immediate mode) and the responsive layouts |
@@ -160,7 +160,7 @@ Desk themes (`content.js THEMES`, 3D palette as hex ints): Graph Paper Desk (des
 
 **Motion.** Camera FOV 40 with a 14 s idle drift of 0.12 units, 0.8 s eased reset, a rise-and-confetti flourish on game over (`startCamRise`, pooled ≤ 260 paper chips), pencil bursts on every draw. With ambient motion on, dust motes drift in the lamp light above the sheet and the active seat token breathes gently. **Reduced motion** (the runtime's accessibility option): folds take 0.15 s, every event animation is capped at 0.3 s, no drift, camera rise or confetti, dust motes are hidden and the seat token holds still.
 
-**Graphics.** Lighting is a warm key directional light plus a hemisphere fill (three.js r160 intensities ÷ π, the engine's convention), ACES filmic tone mapping at exposure 1.05. The look follows the runtime's graphics level (Options › Graphics: Auto from the detected device, or the player's choice; the runtime also owns render scale, the pixel-ratio cap, adaptive resolution, the frame-rate limit and readout). `native/quality.ts` maps the level's tier (`frame().quality`) to the browser build's four presets:
+**Graphics.** Lighting is a warm key directional light plus a hemisphere fill (three.js r160 intensities and shadow values with the shadow box fitted to the sheet, engine minor 28; reflections from `RoomEnvironment(renderer)` as each standard material's own envMap at the page's `envMapIntensity`), ACES filmic tone mapping at exposure 1.05. The look follows the runtime's graphics level (Options › Graphics: Auto from the detected device, or the player's choice; the runtime also owns render scale, the pixel-ratio cap, adaptive resolution, the frame-rate limit and readout). `native/quality.ts` maps the level's tier (`frame().quality`) to the browser build's four presets:
 
 | | Low | Balanced | High | Ultra |
 |---|---|---|---|---|
@@ -171,7 +171,7 @@ Desk themes (`content.js THEMES`, 3D palette as hex ints): Graph Paper Desk (des
 | Anti-aliasing (`renderer.antialias`) | MSAA | FXAA | SMAA | MSAA |
 | Reflections (three's `RoomEnvironment` prefiltered with `PMREMGenerator`, intensity 0.3, low per-material intensities) | off | on | on | on |
 | Materials | Lambert | Standard | Physical (clearcoat pins and strips) | Physical |
-| Surface detail (wood-grain normal + roughness map on the desk, paper-fibre normal map on the sheet and boxes) | plain | detailed | detailed | detailed |
+| Surface detail (wood-grain bump + roughness map on the desk, paper-fibre bump map on the sheet and boxes) | plain | detailed | detailed | detailed |
 | Desk texture / relief | 256 / 128 px | 512 / 256 | 1024 / 512 | 2048 / 1024 |
 | Sheet grid texture | 32 px per cell | 48 | 64 | 96 |
 | Ink-pin segments | 8 | 12 | 16 | 24 |
