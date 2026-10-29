@@ -11,7 +11,7 @@
 | Genre | Turn-based territory strategy (pencil-and-paper classic, single sheet) |
 | Players | 1 human vs 1–3 AI rivals locally |
 | Session length | 2×3 lesson sheets ≈ 1 min; 4×4 ≈ 3–5 min; 7×7 journey finale ≈ 10 min |
-| Platforms | StarHermit engine 1.22.0 script game (host API 1.21): natively in the StarHermit client, in desktop and mobile browsers (portrait and landscape) through the engine's web runtime |
+| Platforms | StarHermit engine 1.23.0 script game (host API 1.21): natively in the StarHermit client, in desktop and mobile browsers (portrait and landscape) through the engine's web runtime |
 | Rendering | `starhermit:scene` desk, paper, dots, edges and folding boxes; `starhermit:ui` HUD, dialogs and a "button board" mirror that is always on screen and fully playable on its own |
 | Networking | None standalone; signed in, the runtime's platform modules carry the cloud save, the game's settings, the invite link, the profile names and the leaderboard post after a ranked sheet (see §12). `server.js` is a local static host whose session/score routes the client does not call |
 
@@ -19,7 +19,7 @@ File map (everything that ships or tests the game):
 
 | Path | Responsibility |
 |---|---|
-| `starhermit.txt` | Manifest: name, owner, `server=score-script.js`, cover, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.22.0`, `engine.minor=16`, capabilities `platform,storage,clipboard`, 13 `control.*` actions with `engine.gamepad.*` defaults and Options groups |
+| `starhermit.txt` | Manifest: name, owner, `server=score-script.js`, cover, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.23.0`, `engine.minor=16`, capabilities `platform,storage,clipboard`, 13 `control.*` actions with `engine.gamepad.*` defaults and Options groups |
 | `index.html`, `starhermit-files.json` | The web loader and file index `starhermit package --web .` writes (`npm run package`; never edited by hand) |
 | `native/main.ts` | Entry module: the sheet in play (session, AI pacing on fixed steps, clock, lessons, end of sheet → stars, bests, stats, achievements, leaderboards), screen state, input routing, lifecycle |
 | `native/screens.ts` | Every screen, the HUD, the button board, toast, captions, pause dialog (`starhermit:ui`, immediate mode) and the responsive layouts |

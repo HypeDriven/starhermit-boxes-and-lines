@@ -9,7 +9,7 @@
     "favicon.png": {"sha256": "e4e4bacf83fce9a2f08d3b3b9ad2fe73d0c628996c7b67fec46a4e998f3bdbf5", "size": 103591},
     "favicon.svg": {"sha256": "c8fc499c2131e8753d5f7b204ec61ee0587841a6e5fece7d6a3313559d5ba068", "size": 531},
     "icon.png": {"sha256": "fe73bdda47c8e76a1de63945b1d0e37474a2feb1a6b9cf11aeb5adf2219ca7d3", "size": 7273},
-    "index.html": {"sha256": "39ae97fd5420c234a4fde2a2837202f67135efb7292bf2f48730ef239cdc1169", "size": 1773},
+    "index.html": {"sha256": "88fe20cd5ac4dfb82ba6bc63e1dc341c2ac372d9a44944255cc4c4706149f6ac", "size": 1773},
     "js/content.js": {"sha256": "6f2224e9648a305e99ac4ac89b7c385bab104190b655cd6b6fb774b98f22478e", "size": 15703},
     "js/i18n.js": {"sha256": "30daa58728ef1ff20a6828d2490053ffbabb85817dff87489bcf0278aaace7bc", "size": 2454},
     "js/migrate.js": {"sha256": "aaa62c3b92e7853c8829afe04b1f6d7e653b6c80dca56f48eb0d13f9a54b0443", "size": 4407},
@@ -51,7 +51,7 @@
     "sfx/turn-tap.opus": {"sha256": "f14606d4a6e41065a1b906134c612aeefe219fab9e2fe2ec5a3e9782edc777ff", "size": 13250},
     "sfx/ui-tap.opus": {"sha256": "1244507594c3d976a16d52645fb1e690dd08fde50031e2c7d3810b9d3e46cf7e", "size": 12067},
     "sfx/win-slap.opus": {"sha256": "7eba2b47f27dfce6e2b8ae391af12033f3d0fe546889356e8e2568ea25601e7d", "size": 42592},
-    "starhermit.txt": {"sha256": "b51a5643896f9ef0b0f285fb595fc0c3b07fc3a7b3adb9d9ae4d7472bc9e58c6", "size": 1926}
+    "starhermit.txt": {"sha256": "6171f3be77a4dfdc2eaf8e35c4bc43e89597431dd701c3dfffc7add35411e331", "size": 1926}
   },
   "excluded": ["node_modules/", "package-lock.json", "package.json", "server.js", "spec.md", "tests/", "tools/", "tsconfig.json"],
   "format": 1
