@@ -16,9 +16,9 @@
 // frame. The synthesized stand-ins the browser build played while a sample
 // loaded are not ported: the engine's browser runtime drops clip loads and
 // plays while a synthesis graph changes (the arrow-exodus port's finding).
-// Clips load one at a time once the mixer runs (natively at once, in a
-// browser after the first press): a burst of loads closes the browser's
-// audio port (the blade-orbit port's finding).
+// The one-shot clips all load at once in onStart (every loaded clip reaches
+// the mixer, natively and on the web); the beds start once the mixer runs
+// (in a browser after the first press).
 import { context, createClip, loadClip, play as playClip, type AudioClip, type Sound } from "starhermit:audio";
 
 const LEVEL = { music: 0.55, effects: 0.9, ambience: 0.5 };
@@ -44,19 +44,13 @@ export const CAPTIONS: Record<string, string> = {
 const clips = new Map<string, AudioClip>();
 let onCaption: ((key: string) => void) | null = null;
 let avRng: { next(): number } | null = null;
-let wantClips = false;
-let loading = false;
-const queue: string[] = [];
 
-function loadNext(): void {
-  const name = queue.shift();
-  if (!name) { loading = false; return; }
-  loading = true;
-  loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); }, (e: unknown) => console.warn(`sfx ${name}: ${String(e)}`))
-    .finally(() => loadNext());
+/** Loads every clip at once (onStart); a cue whose clip is still loading is skipped. */
+export function loadSfx(): void {
+  for (const name of new Set(Object.values(SAMPLES))) {
+    loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); }, (e: unknown) => console.warn(`sfx ${name}: ${String(e)}`));
+  }
 }
-/** Asks for the clips; they load once the mixer runs (see update). */
-export function loadSfx(): void { wantClips = true; }
 export function setOnCaption(cb: (key: string) => void): void { onCaption = cb; }
 export function setAvRng(rng: { next(): number } | null): void { avRng = rng; }
 
@@ -67,7 +61,7 @@ export function play(name: string): void {
   const clip = file ? clips.get(file) : undefined;
   if (!clip) return;
   try { playClip(clip, { bus: name === "ui" ? "interface" : "effects", gain: LEVEL.effects }); }
-  catch { clips.delete(file!); queue.push(file!); if (!loading) loadNext(); } // a clip the mixer lost: load it again
+  catch { /* the mixer is full this frame: skip it */ }
 }
 
 // -- rendered beds ------------------------------------------------------------------------
@@ -142,17 +136,10 @@ export function setPaused(on: boolean): void {
   try { room.fade(on ? 0 : LEVEL.ambience, 0.3); } catch { room = null; }
 }
 
-/** Each frame: what waited for the mixer, one rendered clip a frame, then
+/** Each frame once the mixer runs: one rendered clip a frame, then
  * the pad's next swell every 2.56 s of mixer time. */
 export function update(): void {
-  if (context.state !== "running") return;
-  if (wantClips) {
-    wantClips = false;
-    queue.push(...new Set(Object.values(SAMPLES)));
-    if (!loading) loadNext();
-    return;
-  }
-  if (!started) return;
+  if (context.state !== "running" || !started) return; // starting the beds still waits for the mixer
   try {
     if (!roomTone) { roomTone = roomClip(); return; }
     if (pads.length < PAD_STEPS.length) { pads.push(padClip(pads.length)); return; }
