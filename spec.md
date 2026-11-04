@@ -160,15 +160,15 @@ Desk themes (`content.js THEMES`, 3D palette as hex ints): Graph Paper Desk (des
 
 **Motion.** Camera FOV 40 with a 14 s idle drift of 0.12 units, 0.8 s eased reset, a rise-and-confetti flourish on game over (`startCamRise`, pooled ≤ 260 paper chips), pencil bursts on every draw. With ambient motion on, dust motes drift in the lamp light above the sheet and the active seat token breathes gently. **Reduced motion** (the runtime's accessibility option): folds take 0.15 s, every event animation is capped at 0.3 s, no drift, camera rise or confetti, dust motes are hidden and the seat token holds still.
 
-**Graphics.** Lighting is a warm key directional light plus a hemisphere fill (three.js r160 intensities and shadow values with the shadow box fitted to the sheet, engine minor 28; reflections from `RoomEnvironment(renderer)` as each standard material's own envMap at the page's `envMapIntensity`), ACES filmic tone mapping at exposure 1.05. The look follows the runtime's graphics level (Options › Graphics: Auto from the detected device, or the player's choice; the runtime also owns render scale, the pixel-ratio cap, adaptive resolution, the frame-rate limit and readout). `native/quality.ts` maps the level's tier (`frame().quality`) to the browser build's four presets:
+**Graphics.** Lighting is a warm key directional light plus a hemisphere fill (three.js r160 intensities and shadow values with the shadow box fitted to the sheet, engine minor 28; reflections from `RoomEnvironment(renderer)` as each standard material's own envMap at the page's `envMapIntensity`), ACES filmic tone mapping at exposure 1.05. The look follows the runtime's graphics level (Options › Graphics: Auto from the detected device, or the player's choice; the runtime also owns render scale, the pixel-ratio cap, adaptive resolution, the frame-rate limit and readout). The engine-owned effects (shadows and their map size, AO, bloom resolution, grade, anti-aliasing) are the level's own (`levelSettings()`); `native/quality.ts` keys the game's art to the level's quality tier (the browser build's four presets). At each tier's anchor level (quantum, molecular, terrestrial, galactic):
 
 | | Low | Balanced | High | Ultra |
 |---|---|---|---|---|
 | Shadows (key light, `renderer.shadowMap`) | off | 1024² | 2048² | 4096² (softer edge) |
-| Ambient occlusion (`renderer.ao`) | off | off | on (8 samples) | high (16) |
+| Ambient occlusion (`renderer.ao`) | off | off | ½ res, 8 samples | full res, 16 |
 | Bloom (`renderer.bloom`, threshold 0.88; the active seat token is HDR so it glows) | off | ½ res | ½ res | full |
 | Colour grade (`renderer.grade`: gentle S-curve, saturation 1.1, cool shadows / warm highlights, 0.34 vignette) | off | on | on | on |
-| Anti-aliasing (`renderer.antialias`) | MSAA | FXAA | SMAA | MSAA |
+| Anti-aliasing (`renderer.antialias`) | none | FXAA | SMAA | MSAA |
 | Reflections (three's `RoomEnvironment` prefiltered with `PMREMGenerator`, intensity 0.3, low per-material intensities) | off | on | on | on |
 | Materials | Lambert | Standard | Physical (clearcoat pins and strips) | Physical |
 | Surface detail (wood-grain bump + roughness map on the desk, paper-fibre bump map on the sheet and boxes) | plain | detailed | detailed | detailed |
@@ -179,7 +179,7 @@ Desk themes (`content.js THEMES`, 3D palette as hex ints): Graph Paper Desk (des
 | Confetti chips · dust motes | 40 · 12 | 90 · 24 | 160 · 36 | 220 · 48 |
 | Ambient motion (dust motes, seat-token pulse) | still | animated | animated | animated |
 
-Within a tier the confetti and dust counts grow with the level above the tier's first (≈ 1.64× a level, at most 4×, capped at the 260-chip / 48-mote pools). A level change rebuilds materials and the sheet live. The title and menus sit over a small half-played sheet with two folded boxes. Gameplay is identical at every level.
+Within a tier the confetti and dust counts grow with the level's particle budget against the tier's anchor (2× a level, at most 4×, capped at the 260-chip / 48-mote pools), and higher levels get the level's larger shadow map, AO and bloom. A level change rebuilds materials and the sheet live. The title and menus sit over a small half-played sheet with two folded boxes. Gameplay is identical at every level.
 
 **Visual assets the design calls for:** title key art (a lamplit desk with stamped paper boxes) above the mode cards; a victory vignette (one folded box, bell, confetti) on winning results; a cover in the same still-life language; the icon and favicon. See §15 for status.
 

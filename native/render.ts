@@ -72,7 +72,7 @@ let palette: Palette = { desk: 0x6e4a2e, deskDark: 0x503523, paper: 0xf2ead8, gr
 let playerColors = [0x3f8efc, 0xef5d4e, 0xe8b23f, 0x5fbf77];
 let reducedMotion = false;
 let look: Look | null = null;
-let BUD: Budget = { material: "standard", texture: 512, paperCell: 48, dotSegments: 12, bloomRes: 0.5, particles: 90, dust: 24 };
+let BUD: Budget = { material: "standard", texture: 512, paperCell: 48, dotSegments: 12, particles: 90, dust: 24 };
 let built = false;
 const rand = mulberry32(0xb0e5 ^ 0x51eed);
 
@@ -857,6 +857,7 @@ export function applyLook(next: Look): void {
   renderer.shadowMap.enabled = shadows;
   renderer.shadowMap.type = PCFSoftShadowMap;
   key.castShadow = shadows;
+  // Since minor 23 the engine keeps the game's mapSize whatever the level, so the level's size is set here.
   if (shadows) key.shadow.mapSize = next.shadows;
   key.shadow.radius = next.shadows >= 4096 ? 3 : 2;
   if (next.reflections) {
@@ -874,13 +875,16 @@ export function applyLook(next: Look): void {
   scene.traverse((o) => {
     if (o instanceof Mesh && o.material instanceof MeshStandardMaterial) o.material.envMap = env;
   });
-  renderer.ao = next.ao === "off" ? null : {
-    blendIntensity: 0.75, radius: 0.35, distanceExponent: 1.4, thickness: 0.6, scale: 1.0, samples: next.ao === "high" ? 16 : 8,
-    denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: next.ao === "high" ? 6 : 4, rings: 2, samples: next.ao === "high" ? 16 : 8, radiusExponent: 2 },
+  // The level's AO (levelSettings()): resolution and samples; full-resolution AO
+  // (the engine's "high") takes the browser's Ultra denoise radius.
+  const ao = next.ao, full = !!ao && ao.resolution >= 1;
+  renderer.ao = ao && {
+    blendIntensity: 0.75, radius: 0.35, distanceExponent: 1.4, thickness: 0.6, scale: 1.0, samples: ao.samples, resolution: ao.resolution,
+    denoise: { lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: full ? 6 : 4, rings: 2, samples: ao.denoiseSamples, radiusExponent: 2 },
   };
   // High threshold: only the glowing seat token, previews and bright glints bloom.
   // The page's r160 UnrealBloomPass at its own strength (bloom model r160).
-  renderer.bloom = next.bloom ? { model: "r160", strength: 0.5, radius: 0.4, threshold: 0.88, resolution: next.budget.bloomRes } : null;
+  renderer.bloom = next.bloom !== null ? { model: "r160", strength: 0.5, radius: 0.4, threshold: 0.88, resolution: next.bloom } : null;
   // The browser build's grade: a gentle S-curve (0.18), saturation 1.1,
   // cool shadows / warm highlights rising over 0.15–0.8, a 0.34 vignette.
   renderer.grade = next.grade ? {
@@ -889,7 +893,7 @@ export function applyLook(next: Look): void {
     vignette: { amount: 0.34, inner: 0.32, outer: 0.85, scale: [1.1, 1] },
   } : null;
   renderer.antialias = next.antialias;
-  const k = [next.detailed, next.bloom, BUD.material, BUD.texture, BUD.paperCell, BUD.dotSegments].join("|");
+  const k = [next.detailed, next.bloom !== null, BUD.material, BUD.texture, BUD.paperCell, BUD.dotSegments].join("|");
   if (k !== builtKey) {
     builtKey = k;
     buildMaterials();

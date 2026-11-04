@@ -1,0 +1,46 @@
+# Graphics-tier bench (tools/engine-tier-bench.mjs): a Practice 4×4 sheet
+# against Margot, lines drawn by the keyboard and her replies, ~600 measured frames.
+until 300 Daily Sheet
+frames 30
+click Practice
+until 60 Start sheet
+frames 20
+click Study · 4×4
+frames 5
+click Start sheet
+until 200 Your turn
+frames 120
+measure start
+key Home 2
+frames 3
+key Enter 2
+frames 70
+key Home 2
+frames 3
+key Enter 2
+frames 70
+key Home 2
+frames 3
+key Enter 2
+frames 70
+key Home 2
+frames 3
+key Enter 2
+frames 70
+key Home 2
+frames 3
+key Enter 2
+frames 70
+key Home 2
+frames 3
+key Enter 2
+frames 70
+key Home 2
+frames 3
+key Enter 2
+frames 70
+key Home 2
+frames 3
+key Enter 2
+frames 70
+measure stop
