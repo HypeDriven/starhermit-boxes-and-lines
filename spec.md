@@ -25,8 +25,6 @@ File map (everything that ships or tests the game):
 | `native/screens.ts` | Every screen, the HUD, the button board, toast, captions, pause dialog (`starhermit:ui`, immediate mode) and the responsive layouts |
 | `native/render.ts` | The desk on `starhermit:scene`: procedural textures, edges, folding boxes, preview / focus rings, seat tokens, bursts, confetti, dust, camera, picking, the look per graphics level |
 | `native/quality.ts` | The browser build's four presets and budgets keyed by the runtime's quality tier and level |
-
-Low (quantum) keeps MSAA instead of the level's "off" until engine 1.36.2: engine 1.36.1 recolours fog, haze and translucent overlays without anti-aliasing.
 | `native/audio.ts` | One-shot clips on the runtime mixer, the rendered room tone and pad, captions |
 | `native/platform.ts` | Save document (device + cloud, conflict merge, the browser build's foreign save), game settings, profile names, invite link, high-score post through `score-script.js`, the platform board |
 | `native/i18n.ts`, `native/style.ts`, `native/classic.ts` | Interface language → string tables; the style sheet and palette tokens; loading the shared `js/*.js` scripts (with a `localStorage` shim over device storage) |
