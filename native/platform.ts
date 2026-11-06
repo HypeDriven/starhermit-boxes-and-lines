@@ -16,12 +16,12 @@
 //   boxesandlines.leaderboards.v1 through js/store.js, as the browser build
 //   kept it in localStorage);
 // - a finished ranked sheet's total goes to the high-score board through
-//   score-script.js: a practice session whose socket carries
-//   { type: 'result', scores }, as the JS SDK's submitScores did.
+//   score-script.js (leaderboards.submitScore).
 import type { JsonValue } from "starhermit:engine";
-import { connectGame, inviteLink as fetchInviteLink, leaderboards, onPlayerChange, player, profile, sessions } from "starhermit:platform";
+import { inviteLink as fetchInviteLink, leaderboards, onPlayerChange, player, profile } from "starhermit:platform";
 import { saves, settings as store } from "starhermit:storage";
-import { I18n, Migrate, Store, type Progress, type SaveData, type Settings } from "./classic.ts";
+import { Migrate, Store, type Progress, type SaveData, type Settings } from "./classic.ts";
+import { T } from "./i18n.ts";
 
 // --- progress -------------------------------------------------------------------------
 export let data: SaveData = { progress: Store.fresh().progress, profileName: "" };
@@ -152,7 +152,7 @@ export function displayName(): string | null { return player()?.displayName ?? n
 const names = new Map<string, string>();
 /** A board row's player name: the profile's (cached) when signed in, else "Player <id8>". */
 export function nameFor(id: string): string {
-  const fallback = I18n.T("Player {id}", { id: id.slice(0, 8) });
+  const fallback = T("Player {id}", { id: id.slice(0, 8) });
   if (!player()) return fallback;
   if (id === player()!.userId) return player()!.displayName;
   if (!names.has(id)) {
@@ -178,40 +178,8 @@ async function highScoreBoard(): Promise<{ id: string } | null> {
 }
 /** Signed in only: post a finished run's total through score-script.js; { posted, rank }. Never rejects. */
 export async function postLeaderboard(total: number): Promise<{ posted: boolean; rank: number | null }> {
-  const me = player();
-  if (!me) return { posted: false, rank: null };
-  let accepted: string[] = [];
-  try {
-    const sessionId = await sessions.practice();
-    accepted = await new Promise<string[]>((resolve) => {
-      const socket = connectGame(sessionId);
-      let done = false;
-      const finish = (list: string[]): void => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        socket.close();
-        resolve(list);
-      };
-      const timer = setTimeout(() => finish([]), 15000);
-      socket.on("open", () => { socket.sendCommand({ type: "result", scores: { "high-score": total } }); });
-      socket.on("game", (data) => {
-        const d = data as { type?: string; accepted?: string[] } | null;
-        if (d && d.type === "result-ack") finish(Array.isArray(d.accepted) ? d.accepted : []);
-      });
-      socket.on("error", () => finish([]));
-      socket.on("stopped", () => finish([]));
-      socket.on("abandoned", () => finish([]));
-    });
-  } catch { return { posted: false, rank: null }; }
-  if (!accepted.includes("high-score")) return { posted: false, rank: null };
-  try {
-    const board = await highScoreBoard();
-    if (!board) return { posted: true, rank: null };
-    const r = await leaderboards.entries(board.id, { pageSize: 100 });
-    const mine = r.items.find((e) => e.userId === me.userId);
-    return { posted: true, rank: mine ? mine.rank : null };
-  } catch { return { posted: true, rank: null }; }
+  const r = await leaderboards.submitScore("high-score", total);
+  return { posted: r.accepted, rank: r.rank };
 }
 
 /** Signed in only: the high-score board's top rows (names through nameFor), or null. Never rejects. */

@@ -35,10 +35,11 @@ import {
   ACESFilmicToneMapping, AdditiveBlending, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CircleGeometry, Color,
   CylinderGeometry, DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, InstancedMesh, Matrix4, Mesh,
   MeshBasicMaterial, MeshLambertMaterial, MeshPhysicalMaterial, MeshStandardMaterial, NoColorSpace, OrthographicCamera, PCFSoftShadowMap, PMREMGenerator,
-  PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Raycaster, RepeatWrapping, RingGeometry, RoomEnvironment,
+  ParticleEmitter, PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Raycaster, RepeatWrapping, RingGeometry, RoomEnvironment,
   SRGBColorSpace, Vector3, pointerToNdc, renderer, scene,
 } from "starhermit:scene";
 import type { Material, Object3D, Texture } from "starhermit:scene";
+import { createRandom } from "starhermit:engine";
 import { OffscreenCanvas, type OffscreenCanvasRenderingContext2D } from "starhermit:canvas";
 import type { Dir, Edge, GameEvent, Palette, State } from "./classic.ts";
 import { MAX_DUST, MAX_PARTICLES, type Budget, type Look } from "./quality.ts";
@@ -54,13 +55,8 @@ const PREVIEW_COLORS: Record<string, number> = { ok: 0x6fd98a, risky: 0xe8a13f, 
 const ENV_INTENSITY: Record<string, number> = { dot: 0.35, neutral: 0.3, hole: 0.15, player: 0.3, box: 0.25, stamp: 0.25, desk: 0.3, paper: 0.28, wall: 0.15 };
 
 function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  const r = createRandom(seed, { algorithm: "mulberry32" });
+  return () => r.float();
 }
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 const easeInOut = (t: number): number => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
@@ -536,37 +532,24 @@ function stepEvents(dt: number): void {
 }
 
 // ---------------------------------------------------------------- FX: bursts, confetti, dust
-interface Burst { pts: Points; pos: Float32Array; vel: Float32Array; life: number; dur: number; n: number }
-const burstPool: Burst[] = [];
-const bursts: Burst[] = [];
+// Sparks are native: one emitter a burst shape, each burst its own color (a
+// press's specks at power 0.5, a claim's at 1.2), fading out over 0.5 s.
+const SPARKS: Record<string, ParticleEmitter> = {};
 const fxBudget = (): number => Math.min(look?.particles === "high" ? 300 : 80, BUD.particles);
-function makeBurst(): Burst {
-  const n = 14;
-  const pos = new Float32Array(n * 3);
-  const geo = new BufferGeometry();
-  geo.setAttribute("position", new BufferAttribute(pos, 3));
-  const pts = new Points(geo, new PointsMaterial({ size: 0.05, transparent: true, opacity: 1 }));
-  pts.visible = false;
-  fxGroup.add(pts);
-  return { pts, pos, vel: new Float32Array(n * 3), life: 0, dur: 0.5, n };
+function sparks(n: number, power: number): ParticleEmitter {
+  const e = new ParticleEmitter({
+    capacity: n * MAX_BURSTS, material: new PointsMaterial({ size: 0.05, transparent: true, opacity: 1 }), seed: n, space: "local", life: 0.5,
+    // The browser build's ring of 0.4–1.2 × power is the same spread (rms) in a box.
+    velocity: [0, 0.8 + 0.7 * power, 0], velocitySpread: [1.02 * power, 0.7 * power, 1.02 * power], gravity: [0, -4.5, 0], opacity: [1, 0],
+  });
+  e.frustumCulled = false;
+  fxGroup.add(e);
+  return e;
 }
 function spawnBurst(x: number, y: number, z: number, color: number, n: number, power: number): void {
   if (fxBudget() <= 0) return;
-  const b = burstPool.pop() ?? makeBurst();
-  b.pts.material.color.set(color);
-  b.pts.material.opacity = 1;
-  b.pts.visible = true;
-  b.life = 0; b.dur = 0.5;
-  const count = Math.min(b.n, n);
-  for (let i = 0; i < b.n; i++) {
-    b.pos[i * 3] = x; b.pos[i * 3 + 1] = y; b.pos[i * 3 + 2] = z;
-    if (i < count) {
-      const a = rand() * PI * 2, v = (0.4 + rand() * 0.8) * power;
-      b.vel[i * 3] = Math.cos(a) * v; b.vel[i * 3 + 1] = 0.8 + rand() * 1.4 * power; b.vel[i * 3 + 2] = Math.sin(a) * v;
-    } else b.vel[i * 3] = b.vel[i * 3 + 1] = b.vel[i * 3 + 2] = 0;
-  }
-  b.pts.geometry.getAttribute("position")!.needsUpdate = true;
-  bursts.push(b);
+  const e = (SPARKS[n] ??= sparks(n, power));
+  e.burst(n, [x, y, z], { color });
 }
 interface Confetti { pts: Points; pos: Float32Array; col: Float32Array; vel: Float32Array; life: number }
 let confetti: Confetti | null = null;
@@ -600,17 +583,6 @@ function spawnConfetti(winner: number): void {
   cf.pts.visible = true;
 }
 function stepFx(dt: number): void {
-  for (let i = bursts.length - 1; i >= 0; i--) {
-    const b = bursts[i]!;
-    b.life += dt;
-    for (let j = 0; j < b.n; j++) {
-      b.vel[j * 3 + 1]! -= 4.5 * dt;
-      b.pos[j * 3]! += b.vel[j * 3]! * dt; b.pos[j * 3 + 1]! += b.vel[j * 3 + 1]! * dt; b.pos[j * 3 + 2]! += b.vel[j * 3 + 2]! * dt;
-    }
-    b.pts.geometry.getAttribute("position")!.needsUpdate = true;
-    b.pts.material.opacity = clamp01(1 - b.life / b.dur);
-    if (b.life >= b.dur) { b.pts.visible = false; bursts.splice(i, 1); if (burstPool.length < MAX_BURSTS) burstPool.push(b); }
-  }
   const cf = confetti;
   if (cf && cf.pts.visible) {
     cf.life += dt;
@@ -625,7 +597,7 @@ function stepFx(dt: number): void {
   }
 }
 function clearFx(): void {
-  for (const b of bursts.splice(0)) { b.pts.visible = false; if (burstPool.length < MAX_BURSTS) burstPool.push(b); }
+  for (const e of Object.values(SPARKS)) e.clear();
   if (confetti) confetti.pts.visible = false;
 }
 interface Dust { pts: Points; pos: Float32Array; base: Float32Array; phase: Float32Array }

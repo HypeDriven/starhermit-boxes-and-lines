@@ -11,15 +11,12 @@
 // levels (music 55 %, effects 90 %, ambience 50 %) are folded into each
 // sound's gain.
 //
-// The room tone and the pad's swells were Web Audio graphs; here they are
-// rendered once into clips (createClip) with the same shapes, a clip per
-// frame. The synthesized stand-ins the browser build played while a sample
-// loaded are not ported: the engine's browser runtime drops clip loads and
-// plays while a synthesis graph changes (the arrow-exodus port's finding).
-// The one-shot clips all load at once in onStart (every loaded clip reaches
-// the mixer, natively and on the web); the beds start once the mixer runs
-// (in a browser after the first press).
-import { context, createClip, loadClip, play as playClip, type AudioClip, type Sound } from "starhermit:audio";
+// The room tone and the pad's swells are offline graphs rendered once into
+// clips, with the shapes the browser build's Web Audio graphs had. The
+// synthesized stand-ins it played while a sample loaded are not ported. The
+// one-shot clips and the renders all start in onStart; the beds start once the
+// mixer runs (in a browser after the first press).
+import { OfflineAudioContext, context, createClip, loadClip, play as playClip, type AudioClip, type Sound } from "starhermit:audio";
 
 const LEVEL = { music: 0.55, effects: 0.9, ambience: 0.5 };
 // Event → clip basename (sfx/manifest.json).
@@ -50,6 +47,8 @@ export function loadSfx(): void {
   for (const name of new Set(Object.values(SAMPLES))) {
     loadClip(`sfx/${name}.opus`).then((c) => { clips.set(name, c); }, (e: unknown) => console.warn(`sfx ${name}: ${String(e)}`));
   }
+  renderRoom().then((c) => { roomTone = c; }, (e: unknown) => console.warn(`beds: ${String(e)}`));
+  Promise.all(PAD_STEPS.map((_, i) => renderPad(i))).then((list) => { pads = list; }, (e: unknown) => console.warn(`beds: ${String(e)}`));
 }
 export function setOnCaption(cb: (key: string) => void): void { onCaption = cb; }
 export function setAvRng(rng: { next(): number } | null): void { avRng = rng; }
@@ -66,64 +65,49 @@ export function play(name: string): void {
 
 // -- rendered beds ------------------------------------------------------------------------
 const RATE = 11025;
-/** RBJ biquad lowpass over `x` in place (Web Audio's BiquadFilterNode, Q ≈ 0.707). */
-function lowpass(x: Float32Array, freq: number, q = Math.SQRT1_2): void {
-  const w = (2 * Math.PI * freq) / RATE, alpha = Math.sin(w) / (2 * q), c = Math.cos(w);
-  const a0 = 1 + alpha;
-  const b0 = (1 - c) / 2 / a0, b1 = (1 - c) / a0, b2 = b0, a1 = (-2 * c) / a0, a2 = (1 - alpha) / a0;
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-  for (let i = 0; i < x.length; i++) {
-    const x0 = x[i]!;
-    const y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-    x2 = x1; x1 = x0; y2 = y1; y1 = y0;
-    x[i] = y0;
-  }
-}
-/** The room tone: 6 s of brown noise, low-passed at 320 Hz at 0.16, its ends
- * cross-faded so the loop has no seam. */
-function roomClip(): AudioClip {
-  const n = 6 * RATE, fade = RATE;
-  const raw = new Float32Array(n + fade);
-  let last = 0;
-  for (let i = 0; i < raw.length; i++) {
-    last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
-    raw[i] = last * 3.5;
-  }
-  lowpass(raw, 320);
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) out[i] = raw[i]! * 0.16;
-  for (let i = 0; i < fade; i++) {
-    const k = i / fade;
-    out[i] = (raw[i]! * k + raw[n + i]! * (1 - k)) * 0.16;
-  }
-  return createClip([out], RATE);
+const ROOM_GAIN = 0.153; // measured: the browser build's rms 0.0298 (its noise was quieter than the engine's brown)
+/** The room tone: brown noise looping every 6 s, low-passed at 320 Hz. A filtered
+ * periodic noise is periodic once settled, so the loop has no seam. */
+async function renderRoom(): Promise<AudioClip> {
+  const n = 6 * RATE, settle = Math.round(0.25 * RATE);
+  const off = new OfflineAudioContext(1, settle + n, RATE);
+  const noise = off.createNoise({ color: "brown", seed: 0xb0e5, seconds: 6 });
+  const lp = off.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 320; lp.Q.value = -3.01; // dB: linear Q 0.707
+  const g = off.createGain();
+  g.gain.value = ROOM_GAIN;
+  noise.connect(lp).connect(g).connect(off.destination);
+  noise.start();
+  const r = await off.startRendering();
+  return createClip([r.getChannelData(0).slice(settle)], RATE);
 }
 const PAD_ROOT = 196; // G3
 const PAD_STEPS = [0, 3, 5, 7, 10, 12, 15];
 const PAD_DUR = 3.2;
 /** One swell: sines at 1×, 1.5× and 2× the root, each rising to 0.05/(i+1)
  * over 40 % of 3.2 s and falling to silence by the end, 40 ms apart. */
-function padClip(step: number): AudioClip {
+async function renderPad(step: number): Promise<AudioClip> {
   const root = PAD_ROOT * Math.pow(2, PAD_STEPS[step]! / 12);
-  const n = Math.round((PAD_DUR + 0.2) * RATE);
-  const out = new Float32Array(n);
+  const off = new OfflineAudioContext(1, Math.round((PAD_DUR + 0.2) * RATE), RATE);
   [1, 1.5, 2].forEach((mult, v) => {
-    const f = root * mult, t0 = v * 0.04, peak = 0.05 / (v + 1);
-    for (let i = 0; i < n; i++) {
-      const t = i / RATE - t0;
-      if (t < 0 || t > PAD_DUR) continue;
-      const env = t < PAD_DUR * 0.4 ? peak * (t / (PAD_DUR * 0.4)) : peak * (1 - (t - PAD_DUR * 0.4) / (PAD_DUR * 0.6));
-      out[i]! += Math.sin(2 * Math.PI * f * t) * env;
-    }
+    const t0 = v * 0.04, peak = 0.05 / (v + 1);
+    const osc = off.createOscillator();
+    osc.frequency.value = root * mult;
+    const g = off.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + PAD_DUR * 0.4);
+    g.gain.linearRampToValueAtTime(0, t0 + PAD_DUR);
+    osc.connect(g).connect(off.destination);
+    osc.start(t0); osc.stop(t0 + PAD_DUR);
   });
-  return createClip([out], RATE);
+  return createClip(await off.startRendering());
 }
 
 let started = false;
 let paused = false;
 let room: Sound | null = null;
 let roomTone: AudioClip | null = null;
-const pads: AudioClip[] = [];
+let pads: AudioClip[] = [];
 let padStep = 0;
 let nextPad = 0;
 
@@ -136,13 +120,12 @@ export function setPaused(on: boolean): void {
   try { room.fade(on ? 0 : LEVEL.ambience, 0.3); } catch { room = null; }
 }
 
-/** Each frame once the mixer runs: one rendered clip a frame, then
- * the pad's next swell every 2.56 s of mixer time. */
+/** Each frame once the mixer runs and the renders are done: the room tone,
+ * then the pad's next swell every 2.56 s of mixer time. */
 export function update(): void {
   if (context.state !== "running" || !started) return; // starting the beds still waits for the mixer
+  if (!roomTone || !pads.length) return;
   try {
-    if (!roomTone) { roomTone = roomClip(); return; }
-    if (pads.length < PAD_STEPS.length) { pads.push(padClip(pads.length)); return; }
     if (!room) { room = playClip(roomTone, { bus: "effects", gain: paused ? 0 : LEVEL.ambience, loop: true }); return; }
   } catch (e) { console.warn(`beds: ${String(e)}`); started = false; return; }
   if (paused) return;

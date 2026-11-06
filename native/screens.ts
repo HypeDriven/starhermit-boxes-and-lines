@@ -31,11 +31,9 @@ import {
 // ------------------------------------------------------------------ layout
 interface Layout { lw: number; lh: number; sc: number; wide: boolean; portrait: boolean; shortLand: boolean; ox: number; oy: number }
 function layoutNow(): Layout {
-  const f = frame();
-  const sc = ui.preferences().scale;
-  const sa = f.safeArea;
-  const lw = Math.max(1, (f.width - sa.left - sa.right) / sc), lh = Math.max(1, (f.height - sa.top - sa.bottom) / sc);
-  return { lw, lh, sc, wide: lw >= 1024, portrait: lw <= 700 && lh > lw, shortLand: lw > lh && lh <= 500, ox: sa.left, oy: sa.top };
+  const v = ui.viewport!();
+  const sc = v.scale, lw = Math.max(1, v.width), lh = Math.max(1, v.height);
+  return { lw, lh, sc, wide: lw >= 1024, portrait: lw <= 700 && lh > lw, shortLand: lw > lh && lh <= 500, ox: v.x * sc, oy: v.y * sc };
 }
 const lastSize = new Map<string, { w: number; h: number }>();
 const remember = (key: string, r: ui.Rect, sc: number): void => { lastSize.set(key, { w: r.width / sc, h: r.height / sc }); };
@@ -132,7 +130,7 @@ export function drawScreens(): void {
   else render.setPlayfield(0, 0, frame().width, frame().height, frame().width, frame().height);
   if (app.paused && !app.screen) pauseDialog(L);
   if (app.screen) screen(L);
-  toastAndCaption(L);
+  captionLine(L);
 }
 
 // ------------------------------------------------------------------ HUD
@@ -306,18 +304,8 @@ function edgeButton(e: Edge, w: number, h: number, v: number, playable: boolean)
   if (hit && playable) onPick(e);
 }
 
-// ------------------------------------------------------------------ toast, captions
-function toastAndCaption(L: Layout): void {
-  if (app.toast) {
-    const text = app.toast.text();
-    const w = Math.min(480, L.lw * (L.portrait ? 0.94 : 0.9));
-    const h = sizeOf("toast", 0, 40).h;
-    const bottom = (L.portrait && game && !app.screen ? 84 : 24);
-    const r = ui.place("toast", { anchor: "top-start", x: (L.lw - Math.min(w, textWidth(text, "toast-text") + 44)) / 2, y: L.lh - bottom - h }, () => {
-      ui.column("toast-box", () => para(text, w - 40, "toast-text", "toast-text", true), { style: "toast", align: "center" });
-    });
-    remember("toast", r, L.sc);
-  }
+// ------------------------------------------------------------------ captions
+function captionLine(L: Layout): void {
   if (app.caption) {
     const w = Math.min(L.lw * 0.6, textWidth(app.caption.text, "caption-text") + 26);
     const h = sizeOf("caption", 0, 30).h;
@@ -446,7 +434,7 @@ function titleCards(): { id: string; label: string; title: string; sub: string; 
   return cards;
 }
 function accountLine(): string {
-  if (app.signedOut) return T("Signed out of StarHermit — progress stays on this device.");
+  if (app.signedOut) return T("starhermit.signedOut");
   const name = platform.displayName();
   if (!name) return T("Offline — progress is stored on this device.");
   const s = platform.syncState();
@@ -465,11 +453,11 @@ function titleScreen(w: number, L: Layout): void {
   const link = platform.inviteLink();
   if (link) {
     account.push({
-      id: "btn-invite", text: T("Invite a friend"), style: ["btn", "btn-ghost"],
-      act: () => { try { clipboard.writeText(link); toast(T("Invite link copied to the clipboard.")); } catch { toast(T("Could not copy the invite link.") + " " + link); } },
+      id: "btn-invite", text: T("starhermit.invite"), style: ["btn", "btn-ghost"],
+      act: () => { try { clipboard.writeText(link); toast(T("starhermit.inviteCopied")); } catch { toast(T("starhermit.inviteLink", { link })); } },
     });
   }
-  if (!platform.signedIn()) account.push({ id: "btn-sign-in", text: T("Sign in with StarHermit"), style: ["btn", "btn-ghost"], act: () => { void requestSignIn().catch(() => undefined); } });
+  if (!platform.signedIn()) account.push({ id: "btn-sign-in", text: T("starhermit.signIn"), style: ["btn", "btn-ghost"], act: () => { void requestSignIn().catch(() => undefined); } });
   if (account.length) flow("title-account", account, w);
   para(accountLine(), w, "dim", "account-line");
 }
@@ -587,7 +575,7 @@ function resultsScreen(w: number, L: Layout): void {
   }
   if (r.posting || r.lb) {
     const lb = r.lb;
-    para(r.posting || !lb ? T("Posting score to the leaderboard…") : !lb.posted ? T("Score not posted to the leaderboard.") : lb.rank ? T("Leaderboard rank: #{rank}", { rank: lb.rank }) : T("Score posted to the leaderboard."), w, "dim", "results-lb");
+    para(r.posting || !lb ? T("starhermit.leaderboardPosting") : !lb.posted ? T("starhermit.leaderboardNotPosted") : lb.rank ? T("starhermit.leaderboardRank", { rank: lb.rank }) : T("starhermit.leaderboardPosted"), w, "dim", "results-lb");
   }
   const row: Btn[] = [{ id: "btn-retry", text: "↻ " + T("Retry"), style: ["btn", "btn-primary"], act: retry }];
   if (r.canNext) row.push({ id: "btn-next", text: T("Next") + " →", act: nextSheet });

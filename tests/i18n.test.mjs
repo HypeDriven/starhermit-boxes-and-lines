@@ -1,8 +1,7 @@
 // Localization coverage: every player-facing English key the engine client
 // (native/*.ts) and the content use has a translation in every shipped locale
 // (regional tables inherit from their parent: en-GB → en-US, es-ES → es-419,
-// fr-CA → fr-FR), placeholders survive, and js/i18n.js matches tags and
-// switches locales the way native/i18n.ts drives it.
+// fr-CA → fr-FR) and placeholders survive.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -11,7 +10,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(new URL(p, ROOT), 'utf8');
-const tables = () => require('../js/strings.js').BL_STRINGS;
+const tables = () => JSON.parse(read('assets/strings.json'));
 
 /** Every English key the game passes through T(), or names for it. */
 export function usedKeys() {
@@ -50,7 +49,7 @@ export function usedKeys() {
   Store.ACHIEVEMENTS.forEach((a) => { add(a.name); add(a.desc); });
   for (const m of read('js/rules.js').matchAll(/label: '((?:[^'\\]|\\.)*)'/g)) add(m[1]);
   // Not text: game names, glyphs, ids and style classes the patterns catch.
-  for (const k of [...keys]) if (k === 'Boxes & Lines' || !/[a-z]{2}/.test(k) || /^[a-z0-9-]+$/.test(k) && !/^(easy|medium|hard|select|undo|hint|paused|chain!|platform|timed|locked)$/.test(k) || /^\$|^#|\.(js|ts|webp|json|opus)$|^rgba\(|^starhermit:|^\w+:\w/.test(k)) keys.delete(k);
+  for (const k of [...keys]) if (k === 'Boxes & Lines' || k.startsWith('starhermit.') || !/[a-z]{2}/.test(k) || /^[a-z0-9-]+$/.test(k) && !/^(easy|medium|hard|select|undo|hint|paused|chain!|platform|timed|locked)$/.test(k) || /^\$|^#|\.(js|ts|webp|json|opus)$|^rgba\(|^starhermit:|^\w+:\w/.test(k)) keys.delete(k);
   return [...keys].sort();
 }
 
@@ -79,22 +78,3 @@ test('placeholders survive translation; regional tables only override known keys
   assert.deepEqual(bad, []);
 });
 
-test('i18n matches the runtime language to a shipped locale and switches', () => {
-  const I = require('../js/i18n.js');
-  assert.equal(I.match('de-AT'), 'de-DE');
-  assert.equal(I.match('es-MX'), 'es-419');
-  assert.equal(I.match('es-ES'), 'es-ES');
-  assert.equal(I.match('en-AU'), 'en-GB');
-  assert.equal(I.match('fr-CA'), 'fr-CA');
-  assert.equal(I.match('pt-PT'), 'pt-BR');
-  assert.equal(I.match('ja-JP'), 'en-US');
-  I.setLocale('de-DE');
-  assert.equal(I.lang, 'de-DE');
-  assert.equal(I.T('Resume'), 'Fortsetzen');
-  I.setLocale('fr-CA');
-  assert.equal(I.T('Scores'), 'Pointages'); // regional
-  assert.equal(I.T('Resume'), I.tables['fr-FR']['Resume']); // inherited from fr-FR
-  assert.equal(I.T('Journey {n} — {name}', { n: 3, name: 'X' }).includes('3'), true);
-  I.setLocale('en-US');
-  assert.equal(I.T('Resume'), 'Resume');
-});

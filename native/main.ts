@@ -52,7 +52,6 @@ export const app = {
   /** Frame the screen opened on (the action that opened it must not also close it). */
   openedFrame: 0,
   focusNext: false,
-  toast: null as { text: () => string; until: number } | null,
   caption: null as { text: string; until: number } | null,
   results: null as ResultsView | null,
   /** The sheet results' Retry / Next replay (cfg, lesson). */
@@ -126,9 +125,13 @@ export function keysText(): string {
 }
 
 export function announce(msg: string): void { if (msg) ui.announce(msg.slice(0, 500)); }
-/** `text` is a function so a visible toast follows a language change. */
-export function toast(text: string | (() => string), ms = 3000): void {
-  app.toast = { text: typeof text === "function" ? text : () => text, until: now() + ms / 1000 };
+/** One toast at a time; offset is the old distance from the edge − the stack's 16 px margin (above the portrait tray in a sheet). */
+let shownToast: ui.Toast | null = null;
+export function toast(text: string, ms = 3000): void {
+  shownToast?.dismiss();
+  const v = ui.viewport!();
+  const overTray = v.width <= 700 && v.height > v.width && !!game && !app.screen;
+  shownToast = ui.toast!(text, { duration: ms / 1000, style: ["toast", "toast-text"], dismissible: false, announce: false, position: "bottom", offset: overTray ? 68 : 8 });
 }
 audio.setOnCaption((k) => { if (settings.captions) app.caption = { text: T(k), until: now() + 1.5 }; });
 
@@ -202,7 +205,7 @@ export function startGame(cfg: Cfg, lesson: Lesson | null = null): void {
   render.resetCamera();
   announce(cfgName() + ". " + objectiveText());
   const intro = game.cfg.intro;
-  if (intro) toast(() => T(intro));
+  if (intro) toast(T(intro));
   hudChanged();
   scheduleAi();
 }
@@ -331,7 +334,7 @@ export function onPick(e: Edge): void {
       const kind = previewKind(e);
       render.setPreview(e, kind);
       app.hoverSub = consequence(kind);
-      toast(() => T("Tap again to confirm"));
+      toast(T("Tap again to confirm"));
     }
     return;
   }
@@ -503,7 +506,7 @@ function finishGame(): void {
     if (p.achievements[key]) return;
     p.achievements[key] = Date.now();
     const meta = Store.ACHIEVEMENTS.find((a) => a.key === key);
-    if (meta) { unlocked.push(meta); toast(() => "★ " + T(meta.name)); audio.play("star"); }
+    if (meta) { unlocked.push(meta); toast("★ " + T(meta.name)); audio.play("star"); }
   };
   if (stt.boxesClaimed > 0) unlock("first-box");
   if (stt.wins > 0) unlock("first-win");
@@ -668,7 +671,7 @@ onPreferencesChange(() => applyPrefs());
 onLocaleChange(() => { if (game?.lesson) announce(objectiveText()); });
 platform.onSettingsChange(() => { applyPrefs(); applyTheme(); });
 platform.onProgressMerged(() => applyTheme());
-onSessionEnded(() => { app.signedOut = true; toast(() => T("Signed out of StarHermit — progress stays on this device.")); });
+onSessionEnded(() => { app.signedOut = true; toast(T("starhermit.signedOut")); });
 onPlayerChange((p) => { if (p) app.signedOut = false; });
 onSuspend(() => {
   // Backgrounding pauses the sheet; nothing is lost.
@@ -700,7 +703,6 @@ onUpdate((dt) => {
   applyLook();
   audio.update();
   const t0 = now();
-  if (app.toast && t0 > app.toast.until) app.toast = null;
   if (app.caption && t0 > app.caption.until) app.caption = null;
   if (app.hinted && t0 > app.hinted.until) app.hinted = null;
 });
