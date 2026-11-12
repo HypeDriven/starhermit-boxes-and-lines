@@ -1,3 +1,4 @@
+import { withLanguageRender as __l10nRender } from "./l10n/menu.ts";
 // Boxes & Lines on the StarHermit engine: the entry module (starhermit.txt
 // engine.entry), played natively by the StarHermit client and in browsers by
 // the engine's web runtime. The rules, content, session and save document are
@@ -706,7 +707,11 @@ onUpdate((dt) => {
   if (app.caption && t0 > app.caption.until) app.caption = null;
   if (app.hinted && t0 > app.hinted.until) app.hinted = null;
 });
-onRender(() => {
+onRender(__l10nRender(() => {
   drawScreens();
   render.frame(frameDt);
-});
+}));
+
+// localization-runtime:menu
+import { installLanguageMenu as __installLanguageMenu } from "./l10n/menu.ts";
+__installLanguageMenu(false);
