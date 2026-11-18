@@ -32,12 +32,9 @@
 //   so their envMapIntensity applies as r160 did with scene.environment.
 //   Canvas textures are starhermit:canvas CanvasTextures.
 import {
-  ACESFilmicToneMapping, AdditiveBlending, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CircleGeometry, Color,
-  CylinderGeometry, DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, InstancedMesh, Matrix4, Mesh,
-  MeshBasicMaterial, MeshLambertMaterial, MeshPhysicalMaterial, MeshStandardMaterial, NoColorSpace, OrthographicCamera, PCFSoftShadowMap, PMREMGenerator,
-  ParticleEmitter, PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Raycaster, RepeatWrapping, RingGeometry, RoomEnvironment,
-  SRGBColorSpace, Vector3, pointerToNdc, renderer, scene,
+  ACESFilmicToneMapping, AdditiveBlending, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial, MeshPhysicalMaterial, MeshStandardMaterial, NoColorSpace, OrthographicCamera, PCFSoftShadowMap, PMREMGenerator, PerspectiveCamera, PlaneGeometry, Points, PointsMaterial, Raycaster, RepeatWrapping, RingGeometry, RoomEnvironment, SRGBColorSpace, Vector3, pointerToNdc, renderer, scene,
 } from "starhermit:scene";
+import { GPUParticleEmitter } from "starhermit:particles";
 import type { Material, Object3D, Texture } from "starhermit:scene";
 import { createRandom } from "starhermit:engine";
 import { OffscreenCanvas, type OffscreenCanvasRenderingContext2D } from "starhermit:canvas";
@@ -534,10 +531,10 @@ function stepEvents(dt: number): void {
 // ---------------------------------------------------------------- FX: bursts, confetti, dust
 // Sparks are native: one emitter a burst shape, each burst its own color (a
 // press's specks at power 0.5, a claim's at 1.2), fading out over 0.5 s.
-const SPARKS: Record<string, ParticleEmitter> = {};
+const SPARKS: Record<string, GPUParticleEmitter> = {};
 const fxBudget = (): number => Math.min(look?.particles === "high" ? 300 : 80, BUD.particles);
-function sparks(n: number, power: number): ParticleEmitter {
-  const e = new ParticleEmitter({
+function sparks(n: number, power: number): GPUParticleEmitter {
+  const e = new GPUParticleEmitter({
     capacity: n * MAX_BURSTS, material: new PointsMaterial({ size: 0.05, transparent: true, opacity: 1 }), seed: n, space: "local", life: 0.5,
     // The browser build's ring of 0.4–1.2 × power is the same spread (rms) in a box.
     velocity: [0, 0.8 + 0.7 * power, 0], velocitySpread: [1.02 * power, 0.7 * power, 1.02 * power], gravity: [0, -4.5, 0], opacity: [1, 0],

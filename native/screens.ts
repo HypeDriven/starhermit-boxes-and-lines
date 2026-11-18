@@ -1,3 +1,4 @@
+import { bindings } from "starhermit:input";
 import { localizedStyle as __l10nStyle } from "./l10n/font.ts";
 // localization-runtime:attached
 import { openLocalizedOptions as __l10nOptions } from "./l10n/menu.ts";
@@ -133,7 +134,7 @@ function firstLabel(): string | null {
   }
 }
 
-export function drawScreens(): void {
+function drawScreensImmediate(): void {
   const L = layoutNow();
   // The screen's first control takes focus; inside a scroll area focus may
   // not take at once, so it is asked again until it holds (≤ 12 frames).
@@ -722,4 +723,11 @@ function scoresScreen(w: number): void {
       ui.style(__l10nStyle(cls)).label(r.time);
     });
   }, { columns: ["auto", { fr: 1 }, "auto", "auto", "auto"], gap: 0, width: w, rowStyle: "bd-row" });
+}
+
+export function drawScreens(): void {
+  if (app.screen !== "help") { drawScreensImmediate(); return; }
+  const actions = ["left","right","up","down","first","last","draw","cancel","undo","hint","pause","skip","camera"];
+  const version = JSON.stringify([(app as any).settings ?? (app as any).options ?? {}, (platform as any).options ?? {}, actions.map((action) => bindings(action))]);
+  ui.retain!("help-screen", version, drawScreensImmediate);
 }
