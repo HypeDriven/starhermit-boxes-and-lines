@@ -862,6 +862,7 @@ export function applyLook(next: Look): void {
     vignette: { amount: 0.34, inner: 0.32, outer: 0.85, scale: [1.1, 1] },
   } : null;
   renderer.antialias = next.antialias;
+  renderer.motionBlur = next.bloom !== null ? { intensity: 0.25, samples: 8, maxPixels: 16, targetFps: 60, camera: false } : null;
   const k = [next.detailed, next.bloom !== null, BUD.material, BUD.texture, BUD.paperCell, BUD.dotSegments].join("|");
   if (k !== builtKey) {
     builtKey = k;
