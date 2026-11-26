@@ -12,7 +12,7 @@
     "metadataSource": "starhermit.txt",
     "createdAt": "2026-09-01T07:00:58.234727+00:00",
     "coverArtSource": "manifest",
-    "coverArtUpdatedAt": "2026-11-23T17:01:20.931085+00:00",
+    "coverArtUpdatedAt": "2026-11-26T11:41:51.148425+00:00",
     "submittedByUserId": "2712e04e-461b-4d23-81ae-e40b429128a8",
     "submittedByUsername": "starhermit",
     "hosting": {
@@ -22,9 +22,9 @@
       "pinnedCommitSha": null,
       "deployedCommitSha": null,
       "deployError": null,
-      "deployedAt": "2026-11-23T17:01:20.918972+00:00",
+      "deployedAt": "2026-11-26T11:41:51.137355+00:00",
       "externalLaunchUrl": null,
-      "engineVersion": "1.47.0",
+      "engineVersion": "1.50.0",
       "deployWarning": null
     },
     "description": "Connect dots, close boxes, and claim more of the board than your rivals in a classic strategy game.",
@@ -36,19 +36,19 @@
     "links": [],
     "isDisabled": false
   },
-  "publishedAt": "2026-11-23T17:01:21.042Z",
-  "sourceCommit": "8a434b58ba110aa9dcc803ff9a8caa9dd1b08988",
-  "bytesReceived": 3352420,
-  "archiveSha256": "f0927e1e6a0d62dc5172f3b962f306740580dacd796fe915ce92b5717836d6a3",
+  "publishedAt": "2026-11-26T11:41:51.283Z",
+  "sourceCommit": "da1676eea0265b3c41a9ba5ed56c46c12bddd1bf",
+  "bytesReceived": 3352408,
+  "archiveSha256": "8199796e42c2c604822acac35753029148aec33e3e2523d59c96bd968514245f",
   "indexSha256": "c27f7d9b605923f888a9deb12f4e420ef1335dd0dd44f467a8ba7468191ab350",
   "result": {
     "clientPublished": true,
     "serverImageLoaded": false,
     "imageDigest": null,
-    "bytesReceived": 3352420,
+    "bytesReceived": 3352408,
     "mode": "replace",
     "filesRemoved": 0,
-    "engineVersion": "1.47.0",
+    "engineVersion": "1.50.0",
     "deployWarning": null
   },
   "liveVerification": {
