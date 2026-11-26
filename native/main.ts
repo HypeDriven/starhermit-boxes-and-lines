@@ -17,8 +17,8 @@ import { withLanguageRender as __l10nRender } from "./l10n/menu.ts";
 // (450 ms) after the state changes and the session clock ticks every 15
 // steps (250 ms), only while the sheet is active and unpaused, so a pause, a
 // hidden window or a slow frame never moves them.
-import { frame, levelSettings, onFixedUpdate, onPreferencesChange, onQuit, onRender, onResume, onStart, onSuspend, onUpdate, preferences, setFixedRate } from "starhermit:engine";
-import { bindingLabel, onAction, onPointerButton, onPointerMove, onTouch, vibrate } from "starhermit:input";
+import { frame, levelSettings, onFixedUpdate, onPreferencesChange, onQuit, onRender, onResume, onStart, onSuspend, onUpdate, preferences, setFixedRate, setTargetFps } from "starhermit:engine";
+import { bindingLabel, onAction, onPointerButton, onPointerMove, onTouch, primaryPointer, vibrate } from "starhermit:input";
 import * as ui from "starhermit:ui";
 import { onPlayerChange, onSessionEnded } from "starhermit:platform";
 import { Content, Rules, Session, Store, type Breakdown, type Cfg, type Edge, type GameEvent, type Lesson, type Session as Sess, type Theme } from "./classic.ts";
@@ -700,10 +700,23 @@ onFixedUpdate(() => {
     }
   }
 });
+/** The game's frame cap (host API 1.49 setTargetFps, set only on a change): 30 on phone levels
+ * (levelIndex <= 3) under a finger, where steady 33 ms frames beat 33/50 ms jitter; none otherwise.
+ * The title keeps the display rate: its scrim shows the live demo sheet. The engine sets the cap
+ * aside while its menus are open, and the player's frame-rate limit still applies. */
+let frameCap = -1;
+function capFrames(): void {
+  const cap = frame().levelIndex <= 3 && primaryPointer() === "coarse" ? 30 : 0;
+  if (cap === frameCap) return;
+  frameCap = cap;
+  setTargetFps(cap || null);
+}
+
 let frameDt = 0;
 onUpdate((dt) => {
   frameDt = dt;
   applyLook();
+  capFrames();
   audio.update();
   const t0 = now();
   if (app.caption && t0 > app.caption.until) app.caption = null;

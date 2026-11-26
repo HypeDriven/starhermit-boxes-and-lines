@@ -84,6 +84,10 @@ const cellGroup = new Group();
 const overlayGroup = new Group();
 const fxGroup = new Group();
 boardGroup.add(edgeGroup, cellGroup);
+// Still scenery (host API 1.49 STATIC_SYNC): the desk, sheet and wall, and the dots and pencil
+// lines (a line's only change after placement, its height, is signalled in applyEdge).
+envGroup.movable = false;
+edgeGroup.movable = false;
 
 function setup(): void {
   built = true;
@@ -430,6 +434,7 @@ export function setBoard(rows: number, cols: number, holes: Record<string, boole
         const hm = new Mesh(new BoxGeometry(0.98, HOLE_DEPTH, 0.98), mats!.hole);
         hm.userData.ownGeo = true;
         hm.position.set(dotX(c) + 0.5, -HOLE_DEPTH / 2 - PAPER_THICK, dotZ(r) + 0.5);
+        hm.movable = false;
         cellGroup.add(hm);
         v.holeMesh = hm;
       }
@@ -445,8 +450,12 @@ function applyEdge(v: EdgeView, value: number): void {
   if (v.value === value) return;
   v.value = value;
   if (value === 0) v.mesh.visible = false;
-  else if (value === -1) { v.mesh.visible = true; v.mesh.material = mats!.neutral; v.mesh.scale.y = 0.6; }
-  else { v.mesh.visible = true; v.mesh.material = mats!.player[(value - 1) % mats!.player.length]!; v.mesh.scale.y = 1; }
+  else {
+    v.mesh.visible = true;
+    v.mesh.material = value === -1 ? mats!.neutral : mats!.player[(value - 1) % mats!.player.length]!;
+    const sy = value === -1 ? 0.6 : 1;
+    if (v.mesh.scale.y !== sy) { v.mesh.scale.y = sy; v.mesh.matrixWorldNeedsUpdate = true; }
+  }
 }
 function applyCell(v: CellView, r: number, c: number, value: number): void {
   if (v.value === value) return;
@@ -707,6 +716,7 @@ function buildTurnTokens(): void {
     t.position.set(d[0]! * rad, 0.005, d[1]! * rad);
     t.noAO = true;
     t.visible = false;
+    t.movable = false;
     scene.add(t);
     tokens.push(t);
   }
