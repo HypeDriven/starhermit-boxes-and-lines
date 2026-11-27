@@ -11,7 +11,7 @@
 | Genre | Turn-based territory strategy (pencil-and-paper classic, single sheet) |
 | Players | 1 human vs 1–3 AI rivals locally |
 | Session length | 2×3 lesson sheets ≈ 1 min; 4×4 ≈ 3–5 min; 7×7 journey finale ≈ 10 min |
-| Platforms | StarHermit engine 1.51.0 script game: natively in the StarHermit client, in desktop and mobile browsers (portrait and landscape) through the engine's web runtime |
+| Platforms | StarHermit engine 1.52.0 script game: natively in the StarHermit client, in desktop and mobile browsers (portrait and landscape) through the engine's web runtime |
 | Rendering | `starhermit:scene` desk, paper, dots, edges and folding boxes; `starhermit:ui` HUD, dialogs and a "button board" mirror that is always on screen and fully playable on its own |
 | Networking | None standalone; signed in, the runtime's platform modules carry the cloud save, the game's settings, the invite link, the profile names and the leaderboard post after a ranked sheet (see §12). `server.js` is a local static host whose session/score routes the client does not call |
 
@@ -19,7 +19,7 @@ File map (everything that ships or tests the game):
 
 | Path | Responsibility |
 |---|---|
-| `starhermit.txt` | Manifest: name, owner, `server=score-script.js`, cover, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.51.0`, `engine.minor=51`, capabilities `platform,storage,clipboard`, 13 `control.*` actions with `engine.gamepad.*` defaults and Options groups |
+| `starhermit.txt` | Manifest: name, owner, `server=score-script.js`, cover, `launch=index.html`, `engine.api=1`, `engine.entry=native/main.ts`, `engine.version=1.52.0`, `engine.minor=52`, capabilities `platform,storage,clipboard`, 13 `control.*` actions with `engine.gamepad.*` defaults and Options groups |
 | `index.html`, `starhermit-files.json` | The web loader and file index `starhermit package --web .` writes (`npm run package`; never edited by hand) |
 | `native/main.ts` | Entry module: the sheet in play (session, AI pacing on fixed steps, clock, lessons, end of sheet → stars, bests, stats, achievements, leaderboards), screen state, input routing, lifecycle |
 | `native/screens.ts` | Every screen, the HUD, the button board, toast, captions, pause dialog (`starhermit:ui`, immediate mode) and the responsive layouts |
@@ -300,16 +300,16 @@ The string tables include complete regional variants for `fr-BE`, `de-BE`, `en-S
 
 Cosmetic particle emitters use native GPU particles with automatic CPU fallback on devices or graphics tiers without GPU particle support.
 
-## Engine 1.51.0
+## Engine 1.52.0
 
-Browser play uses the StarHermit 1.51.0 web runtime on WebGPU, or WebGL 2 where WebGPU is missing. Automatic ray-traced shadows are enabled on supported Vulkan devices, with mapped-shadow fallbacks elsewhere. Packaging creates block-compressed runtime textures and compressed glTF copies, retaining original image fallbacks.
+Browser play uses the StarHermit 1.52.0 web runtime on WebGPU, or WebGL 2 where WebGPU is missing. Automatic ray-traced shadows are enabled on supported Vulkan devices, with mapped-shadow fallbacks elsewhere. Packaging creates block-compressed runtime textures and compressed glTF copies, retaining original image fallbacks.
 
 The help screen replays through retained native UI while its contents, options, layout and key bindings are unchanged.
 
 Browser rendering uses the engine's asynchronous pipeline creation so newly encountered materials do not stall the page. Native play retains the engine's synchronous pipeline behavior.
 
-**Frame rate (host API 1.51 `setTargetFps`).** Under a finger (`primaryPointer() === "coarse"`) the game caps itself at 30 frames a second on the phone graphics levels (`levelIndex` ≤ 3), where steady 33 ms frames replace 33/50 ms jitter; elsewhere, the title included (its scrim shows the live demo sheet), there is no game cap. The engine sets the cap aside while its menus are open, and the player's Frame rate limit still applies.
+**Frame rate (host API 1.52 `setTargetFps`).** Under a finger (`primaryPointer() === "coarse"`) the game caps itself at 30 frames a second on the phone graphics levels (`levelIndex` ≤ 3), where steady 33 ms frames replace 33/50 ms jitter; elsewhere, the title included (its scrim shows the live demo sheet), there is no game cap. The engine sets the cap aside while its menus are open, and the player's Frame rate limit still applies.
 
-**Still scenery (host API 1.51).** The desk, sheet and wall, the dots and pencil lines, the holes and the seat tokens are `movable = false`, so shadow maps cache them from the first frame; a line's height change (neutral to claimed) is signalled with `matrixWorldNeedsUpdate`. Folding boxes, the preview rings and the dust stay movable.
+**Still scenery (host API 1.52).** The desk, sheet and wall, the dots and pencil lines, the holes and the seat tokens are `movable = false`, so shadow maps cache them from the first frame; a line's height change (neutral to claimed) is signalled with `matrixWorldNeedsUpdate`. Folding boxes, the preview rings and the dust stay movable.
 
 Higher graphics tiers use native per-object motion blur for moving pieces and effects. Camera motion stays sharp, lower tiers omit the effect, and the runtime's Motion blur and Reduce motion preferences remain authoritative.
